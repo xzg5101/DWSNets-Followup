@@ -13,7 +13,10 @@ args = parser.parse_args()
 
 train_set = INRDataset(path=args.data_path, split="train", normalize=False)
 train_loader = torch.utils.data.DataLoader(
-    dataset=train_set, batch_size=args.batch_size, shuffle=True, num_workers=8
+    dataset=train_set, 
+    batch_size=args.batch_size, 
+    shuffle=True, 
+    num_workers=4
 )
 
 batch: Batch = next(iter(train_loader))
