@@ -106,7 +106,7 @@ def main(
         dataset=train_set,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
+        num_workers=4,
         pin_memory=True,
         drop_last=True,
     )
@@ -114,12 +114,13 @@ def main(
         dataset=val_set,
         batch_size=batch_size,
         shuffle=False,
+        num_workers=4,
     )
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=args.num_workers,
+        num_workers=4,
         pin_memory=True,
     )
 
