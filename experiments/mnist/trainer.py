@@ -340,9 +340,9 @@ if __name__ == "__main__":
             f"_bs_{args.batch_size}_seed_{args.seed}"
         )
         wandb.init(
-            project=args.wandb_project,
-            entity=args.wandb_entity,
-            name=name,
+            project='weight-space',
+            #entity=args.wandb_entity,
+            #name=name,
             settings=wandb.Settings(start_method="fork"),
         )
         wandb.config.update(args)
