@@ -90,11 +90,13 @@ def main(
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
+        num_workers=4,
     )
     val_loader = torch.utils.data.DataLoader(
         dataset=val_set,
         batch_size=batch_size,
         shuffle=False,
+        num_workers=4,
     )
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
@@ -102,6 +104,7 @@ def main(
         shuffle=True,
         num_workers=args.num_workers,
         pin_memory=True,
+        num_workers=4,
     )
 
     logging.info(
