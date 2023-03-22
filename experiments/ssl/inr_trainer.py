@@ -40,7 +40,11 @@ def main(lr, bs, device):
     coef = np.random.uniform(0.0, 10.0, 2)
     logging.info(f"coefs [{coef.tolist()[0]:.3f}, {coef.tolist()[1]:.3f}]")
     train_dataset = SineDataset(coef=coef, n_samples=args.n_samples)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=bs)
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, 
+        batch_size=bs, 
+        num_workers=4
+    )
 
     # optimizer
     if args.optim == "sgd":

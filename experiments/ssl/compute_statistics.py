@@ -15,7 +15,10 @@ args = parser.parse_args()
 
 train_set = SineINR2CoefDataset(path=args.data_path, normalize=False)
 train_loader = torch.utils.data.DataLoader(
-    dataset=train_set, batch_size=args.batch_size, shuffle=True, num_workers=8
+    dataset=train_set, 
+    batch_size=args.batch_size, 
+    shuffle=True, 
+    num_workers=4
 )
 
 batch = next(iter(train_loader))
