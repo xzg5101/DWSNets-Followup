@@ -357,46 +357,45 @@ class InvariantLayer(BaseLayer):
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-
-        # First weight matrix
-        first_w = weights[0]
+        # first and last matrices are special
+        first_w, last_w = weights[0], weights[-1]
+        # first w is of shape (bs, d0, d1, in_features)
+        # (bs, d1, d0 * in_features)
         pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
-
-        # Last weight matrix
-        last_w = weights[-1]
+        # (bs, d{L-1}, dL * in_features)
         pooled_last_w = last_w.flatten(start_dim=2)
-
-        # Intermediate weight matrices
-        pooled_weights = []
-        for i in range(1, len(weights)-1):
-            w = weights[i]
-            pooled_w = w.permute(0, 3, 1, 2).flatten(start_dim=2)
-            pooled_weights.append(pooled_w)
-        pooled_weights = torch.cat(pooled_weights, dim=1)
-
-        # Bias layers
-        pooled_biases = []
-        for i in range(len(biases)-1):
-            b = biases[i]
-            pooled_b = self._reduction(b, dim=1)
-            pooled_biases.append(pooled_b)
-        pooled_biases = torch.cat(pooled_biases, dim=1)
-
-        # Last bias layer
+        # (bs, d0 * in_features)
+        pooled_first_w = self._reduction(pooled_first_w, dim=1)
+        # (bs, dL * in_features)
+        pooled_last_w = self._reduction(pooled_last_w, dim=1)
+        # last bias is special
         last_b = biases[-1]
+        # (bs, dL * in_features)
         pooled_last_b = last_b.flatten(start_dim=1)
 
-        # Concatenate all the pooled weights and biases
-        pooled_all = torch.cat(
-            [pooled_weights, pooled_first_w, pooled_last_w, pooled_biases, pooled_last_b],
-            dim=-1
+        # concat
+        pooled_weights = torch.cat(
+            [
+                self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+                for w in weights[1:-1]
+            ],
+            dim=-1,
+        )  # (bs, (len(weights) - 2) * in_features)
+        # (bs, (len(weights) - 2) * in_features + d0 * in_features + dL * in_features)
+        pooled_weights = torch.cat(
+            (pooled_weights, pooled_first_w, pooled_last_w), dim=-1
         )
 
-        # Pass through the linear layers
-        out = self.layer(pooled_all)
+        pooled_biases = torch.cat(
+            [self._reduction(b, dim=1) for b in biases[:-1]], dim=-1
+        )  # (bs, (len(biases) - 1) * in_features)
+        # (bs, (len(biases) - 1) * in_features + dL * in_features)
+        pooled_biases = torch.cat((pooled_biases, pooled_last_b), dim=-1)
 
-        return out
-
+        pooled_all = torch.cat(
+            [pooled_weights, pooled_biases], dim=-1
+        )  # (bs, (num layers - 3) * in_features + d0 * in_features + dL * in_features + dL * in_features)
+        return self.layer(pooled_all)
 
 
 class NaiveInvariantLayer(BaseLayer):
