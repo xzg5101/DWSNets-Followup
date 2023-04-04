@@ -355,6 +355,7 @@ class InvariantLayer(BaseLayer):
             bias=bias,
         )
 
+    # This is the GPT 4 improved version of the code
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
 
