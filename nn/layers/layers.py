@@ -158,19 +158,31 @@ class DWSLayer(BaseLayer):
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
+        new_weights_from_weights = self.weight_to_weight(weights)
+        new_weights_from_biases = self.bias_to_weight(biases)
 
-        # Run all four blocks in a single list comprehension
-        new_weights, new_biases = zip(*[(block(weights), block(biases)) for block in self.blocks])
+        new_biases_from_biases = self.bias_to_bias(biases)
+        new_biases_from_weights = self.weight_to_bias(weights)
 
         # add and normalize by the number of matrices
-        new_weights = tuple((sum(w) / self.n_matrices) for w in zip(*new_weights))
-        new_biases = tuple((sum(b) / self.n_matrices) for b in zip(*new_biases))
+        new_weights = tuple(
+            (w0 + w1) / self.n_matrices
+            for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
+        )
+        new_biases = tuple(
+            (b0 + b1) / self.n_matrices
+            for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
+        )
 
         if self.add_skip:
             skip_out = tuple(self.skip(w) for w in x[0]), tuple(
                 self.skip(b) for b in x[1]
             )
             new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
+            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
+
+        return new_weights, new_biases
+
     
     @staticmethod
     def _apply_off_diag_penalty(name):
