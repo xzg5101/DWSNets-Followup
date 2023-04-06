@@ -357,31 +357,44 @@ class InvariantLayer(BaseLayer):
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
+        # first and last matrices are special
+        first_w, last_w = weights[0], weights[-1]
+        # first w is of shape (bs, d0, d1, in_features)
+        # (bs, d1, d0 * in_features)
+        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
+        # (bs, d{L-1}, dL * in_features)
+        pooled_last_w = last_w.flatten(start_dim=2)
+        # (bs, d0 * in_features)
+        pooled_first_w = self._reduction(pooled_first_w, dim=1)
+        # (bs, dL * in_features)
+        pooled_last_w = self._reduction(pooled_last_w, dim=1)
+        # last bias is special
+        last_b = biases[-1]
+        # (bs, dL * in_features)
+        pooled_last_b = last_b.flatten(start_dim=1)
 
-        # Optimize by concatenating in one step
-        pooled_weights = [self._reduction(weights[0].permute(0, 2, 1, 3).flatten(start_dim=2), dim=1)]  # first_w
-        pooled_weights.extend([
-            self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=1)
-            for w in weights[1:-1]
-        ])
-        pooled_weights.append(self._reduction(weights[-1].flatten(start_dim=2), dim=1))  # last_w
+        # concat
+        pooled_weights = torch.cat(
+            [
+                self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+                for w in weights[1:-1]
+            ],
+            dim=-1,
+        )  # (bs, (len(weights) - 2) * in_features)
+        # (bs, (len(weights) - 2) * in_features + d0 * in_features + dL * in_features)
+        pooled_weights = torch.cat(
+            (pooled_weights, pooled_first_w, pooled_last_w), dim=-1
+        )
 
-        pooled_weights = torch.cat(pooled_weights, dim=-1)  # Remove intermediate variable pooled_weights
+        pooled_biases = torch.cat(
+            [self._reduction(b, dim=1) for b in biases[:-1]], dim=-1
+        )  # (bs, (len(biases) - 1) * in_features)
+        # (bs, (len(biases) - 1) * in_features + dL * in_features)
+        pooled_biases = torch.cat((pooled_biases, pooled_last_b), dim=-1)
 
-        pooled_biases = [self._reduction(b, dim=1) for b in biases[:-1]]
-        pooled_biases.append(self._reduction(biases[-1].flatten(start_dim=1), dim=1))  # last_b
-
-        # Ensure correct output shape
-        if len(pooled_biases) == 1:
-            pooled_biases = pooled_biases[0]
-        else:
-            pooled_biases = torch.cat(pooled_biases, dim=-1)  # Remove intermediate variable pooled_biases
-
-        if len(weights) == 2:
-            pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
-        else:
-            pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1).unsqueeze(1)
-
+        pooled_all = torch.cat(
+            [pooled_weights, pooled_biases], dim=-1
+        )  # (bs, (num layers - 3) * in_features + d0 * in_features + dL * in_features + dL * in_features)
         return self.layer(pooled_all)
 
 
