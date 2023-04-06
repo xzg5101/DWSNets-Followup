@@ -194,21 +194,22 @@ class DWSLayer(BaseLayer):
         new_biases_from_weights = self.weight_to_bias(weights)
 
         # add and normalize by the number of matrices
-        new_weights = tuple(
-            (w0 + w1) / self.n_matrices
-            for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
-        )
-        new_biases = tuple(
-            (b0 + b1) / self.n_matrices
-            for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
-        )
+        new_weights = torch.stack(new_weights_from_weights) + torch.stack(new_weights_from_biases)
+        new_biases = torch.stack(new_biases_from_biases) + torch.stack(new_biases_from_weights)
+
+        new_weights /= self.n_matrices
+        new_biases /= self.n_matrices
 
         if self.add_skip:
-            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
-                self.skip(b) for b in x[1]
-            )
-            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
-            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
+            skip_out_weights = torch.stack(tuple(self.skip(w) for w in weights))
+            skip_out_biases = torch.stack(tuple(self.skip(b) for b in biases))
+
+            new_weights += skip_out_weights
+            new_biases += skip_out_biases
+
+        # Convert back to tuple of tensors
+        new_weights = tuple(new_weights)
+        new_biases = tuple(new_biases)
 
         return new_weights, new_biases
 
