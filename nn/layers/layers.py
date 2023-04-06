@@ -330,15 +330,21 @@ class InvariantLayer(BaseLayer):
         self.bias_shapes = bias_shapes
         n_layers = len(weight_shapes) + len(bias_shapes)
         
-        layer_in_features = self.calculate_layer_in_features(in_features, weight_shapes, bias_shapes)
-        self.layer = self._get_mlp(in_features=layer_in_features, out_features=out_features, bias=bias)
-
-    def calculate_layer_in_features(self, in_features, weight_shapes, bias_shapes):
-        return (
-            in_features * (len(weight_shapes) + len(bias_shapes) - 3)
-            + in_features * weight_shapes[0][0]
-            + in_features * weight_shapes[-1][-1]
-            + in_features * bias_shapes[-1][-1]
+        self.layer = self.layer = self._get_mlp(
+            in_features=(
+                in_features * (n_layers - 3)
+                +
+                # in_features * d0 - first weight matrix
+                in_features * weight_shapes[0][0]
+                +
+                # in_features * dL - last weight matrix
+                in_features * weight_shapes[-1][-1]
+                +
+                # in_features * dL - last bias
+                in_features * bias_shapes[-1][-1]
+            ),
+            out_features=out_features,
+            bias=bias,
         )
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
