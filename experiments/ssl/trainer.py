@@ -424,6 +424,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--add-bn", type=str2bool, default=True, help="add batch norm layers"
     )
+
+    parser.add_argument(
+        "--gpt", type=str2bool, default=True, help=None
+    )
+
     args = parser.parse_args()
 
     # set seed
@@ -432,7 +437,7 @@ if __name__ == "__main__":
     if args.wandb:
         name = (
             f"model_embedding_{args.model}_lr_{args.lr}_hid_dim_{args.dim_hidden}_reduction_{args.reduction}"
-            f"_bs_{args.batch_size}_seed_{args.seed}"
+            f"_bs_{args.batch_size}_seed_{args.seed}_gpt_{args.gpt}"
         )
         wandb.init(
             project='weight-space',
