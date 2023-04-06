@@ -377,7 +377,11 @@ class InvariantLayer(BaseLayer):
         else:
             pooled_biases = torch.cat(pooled_biases, dim=-1)  # Remove intermediate variable pooled_biases
 
-        pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
+        if len(weights) == 2:
+            pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
+        else:
+            pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1).unsqueeze(1)
+
         return self.layer(pooled_all)
 
 
