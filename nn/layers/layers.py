@@ -212,6 +212,7 @@ class DWSLayer(BaseLayer):
 
         return new_weights, new_biases
 
+
 class DownSampleDWSLayer(DWSLayer):
     def __init__(
         self,
@@ -395,9 +396,6 @@ class InvariantLayer(BaseLayer):
             [pooled_weights, pooled_biases], dim=-1
         )  # (bs, (num layers - 3) * in_features + d0 * in_features + dL * in_features + dL * in_features)
         return self.layer(pooled_all)
-
-
-
 
 
 class NaiveInvariantLayer(BaseLayer):
