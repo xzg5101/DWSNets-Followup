@@ -72,7 +72,10 @@ class DWSLayer(BaseLayer):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
         in_features,
         out_features,
         bias=True,
@@ -98,51 +101,49 @@ class DWSLayer(BaseLayer):
         self.n_matrices = len(weight_shapes) + len(bias_shapes)
         self.add_skip = add_skip
 
-        # Combine all blocks into a single list
-        self.blocks = [
-            WeightToWeightBlock(
-                in_features,
-                out_features,
-                shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            BiasToBiasBlock(
-                in_features,
-                out_features,
-                shapes=bias_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            BiasToWeightBlock(
-                in_features,
-                out_features,
-                bias_shapes=bias_shapes,
-                weight_shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            WeightToBiasBlock(
-                in_features,
-                out_features,
-                bias_shapes=bias_shapes,
-                weight_shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-        ]
+        self.weight_to_weight = WeightToWeightBlock(
+            in_features,
+            out_features,
+            shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+        self.bias_to_bias = BiasToBiasBlock(
+            in_features,
+            out_features,
+            shapes=bias_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+        self.bias_to_weight = BiasToWeightBlock(
+            in_features,
+            out_features,
+            bias_shapes=bias_shapes,
+            weight_shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+
+        self.weight_to_bias = WeightToBiasBlock(
+            in_features,
+            out_features,
+            bias_shapes=bias_shapes,
+            weight_shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
 
         self._init_model_params(init_scale, init_off_diag_scale_penalty)
 
@@ -156,34 +157,6 @@ class DWSLayer(BaseLayer):
                         )
                         torch.nn.init.constant_(m.bias, 0.0)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
-        weights, biases = x
-        new_weights_from_weights = self.weight_to_weight(weights)
-        new_weights_from_biases = self.bias_to_weight(biases)
-
-        new_biases_from_biases = self.bias_to_bias(biases)
-        new_biases_from_weights = self.weight_to_bias(weights)
-
-        # add and normalize by the number of matrices
-        new_weights = tuple(
-            (w0 + w1) / self.n_matrices
-            for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
-        )
-        new_biases = tuple(
-            (b0 + b1) / self.n_matrices
-            for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
-        )
-
-        if self.add_skip:
-            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
-                self.skip(b) for b in x[1]
-            )
-            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
-            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
-
-        return new_weights, new_biases
-
-    
     @staticmethod
     def _apply_off_diag_penalty(name):
         if "weight_to_weight" in name or "bias_to_bias" in name:
@@ -211,6 +184,33 @@ class DWSLayer(BaseLayer):
                 if m.bias is not None:
                     # m.bias.data.fill_(0.0)
                     m.bias.data.uniform_(-1e-4, 1e-4)
+
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+        weights, biases = x
+        new_weights_from_weights = self.weight_to_weight(weights)
+        new_weights_from_biases = self.bias_to_weight(biases)
+
+        new_biases_from_biases = self.bias_to_bias(biases)
+        new_biases_from_weights = self.weight_to_bias(weights)
+
+        # add and normalize by the number of matrices
+        new_weights = tuple(
+            (w0 + w1) / self.n_matrices
+            for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
+        )
+        new_biases = tuple(
+            (b0 + b1) / self.n_matrices
+            for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
+        )
+
+        if self.add_skip:
+            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
+                self.skip(b) for b in x[1]
+            )
+            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
+            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
+
+        return new_weights, new_biases
 
 class DownSampleDWSLayer(DWSLayer):
     def __init__(
