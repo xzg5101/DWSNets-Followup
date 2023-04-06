@@ -313,67 +313,69 @@ class DownSampleDWSLayer(DWSLayer):
 
         return weights, biases
 
+
 class InvariantLayer(BaseLayer):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        in_features,
+        out_features,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
     ):
-        super().__init__(in_features, out_features, bias=bias, reduction=reduction, n_fc_layers=n_fc_layers)
-        
+        super().__init__(
+            in_features,
+            out_features,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+        )
         self.weight_shapes = weight_shapes
         self.bias_shapes = bias_shapes
-        
-        layer_in_features = self.calculate_layer_in_features(in_features, weight_shapes, bias_shapes)
-        self.layer = self._get_mlp(in_features=layer_in_features, out_features=out_features, bias=bias)
-
-    def calculate_layer_in_features(self, in_features, weight_shapes, bias_shapes):
-        weight_in_features = sum(w[0] * in_features for w in weight_shapes)
-        bias_in_features = sum(b[0] * in_features for b in bias_shapes)
-        return weight_in_features + bias_in_features
+        n_layers = len(weight_shapes) + len(bias_shapes)
+        self.layer = self._get_mlp(
+            in_features=(
+                in_features * (n_layers - 3)
+                +
+                # in_features * d0 - first weight matrix
+                in_features * weight_shapes[0][0]
+                +
+                # in_features * dL - last weight matrix
+                in_features * weight_shapes[-1][-1]
+                +
+                # in_features * dL - last bias
+                in_features * bias_shapes[-1][-1]
+            ),
+            out_features=out_features,
+            bias=bias,
+        )
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        first_w, last_w = weights[0], weights[-1]
 
-        pooled_first_w = self.pool_first_weight(first_w)
-        pooled_last_w = self.pool_last_weight(last_w)
+        # Optimize by concatenating in one step
+        pooled_weights = [self._reduction(weights[0].permute(0, 2, 1, 3).flatten(start_dim=2), dim=1)]  # first_w
+        pooled_weights.extend([
+            self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+            for w in weights[1:-1]
+        ])
+        pooled_weights.append(self._reduction(weights[-1].flatten(start_dim=2), dim=1))  # last_w
 
-        last_b = biases[-1]
-        pooled_last_b = last_b.flatten(start_dim=1)
+        pooled_weights = torch.cat(pooled_weights, dim=-1)  # Remove intermediate variable pooled_weights
 
-        pooled_weights = self.pool_all_weights_except_first_and_last(weights)
-        pooled_biases = self.pool_all_biases_except_last(biases)
+        pooled_biases = [self._reduction(b, dim=1) for b in biases[:-1]]
+        pooled_biases.append(self._reduction(biases[-1].flatten(start_dim=1), dim=1))  # last_b
+
+        pooled_biases = torch.cat(pooled_biases, dim=-1)  # Remove intermediate variable pooled_biases
 
         pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
         return self.layer(pooled_all)
 
-    def pool_first_weight(self, first_w):
-        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
-        return self._reduction(pooled_first_w, dim=1)
-
-    def pool_last_weight(self, last_w):
-        pooled_last_w = last_w.flatten(start_dim=2)
-        return self._reduction(pooled_last_w, dim=1)
-
-    def pool_all_weights_except_first_and_last(self, weights):
-        pooled_weights = torch.cat(
-            [
-                self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
-                for w in weights[1:-1]
-            ],
-            dim=-1,
-        )
-        return pooled_weights
-
-    def pool_all_biases_except_last(self, biases):
-        pooled_biases = torch.cat([self._reduction(b, dim=1) for b in biases[:-1]], dim=-1)
-        return pooled_biases
 
 
 class NaiveInvariantLayer(BaseLayer):
