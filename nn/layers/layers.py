@@ -361,7 +361,7 @@ class InvariantLayer(BaseLayer):
         # Optimize by concatenating in one step
         pooled_weights = [self._reduction(weights[0].permute(0, 2, 1, 3).flatten(start_dim=2), dim=1)]  # first_w
         pooled_weights.extend([
-            self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+            self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=1)  # Correct the reduction dimension here
             for w in weights[1:-1]
         ])
         pooled_weights.append(self._reduction(weights[-1].flatten(start_dim=2), dim=1))  # last_w
@@ -375,6 +375,7 @@ class InvariantLayer(BaseLayer):
 
         pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
         return self.layer(pooled_all)
+
 
 
 
