@@ -171,7 +171,34 @@ class DWSLayer(BaseLayer):
                 self.skip(b) for b in x[1]
             )
             new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
+    
+    @staticmethod
+    def _apply_off_diag_penalty(name):
+        if "weight_to_weight" in name or "bias_to_bias" in name:
+            # for example mane='bias_to_bias.layers.0_0.layer.set_layer.mab.fc_q',
+            # we extract the ["0", "0"] and check if the len of this set is of size 2
+            # (here it is False, i.e., on the diag)
+            return (len(set(name.split(".")[2].split("_"))) == 2) or (
+                "skip" not in name
+            )
+        else:
+            return True
 
+    def _init_model_params(self, scale, off_diag_penalty=1.0):
+        for n, m in self.named_modules():
+            if isinstance(m, nn.Linear):
+                out_c, in_c = m.weight.shape
+                g = (2 * in_c / out_c) ** 0.5
+                # nn.init.xavier_normal_(m.weight, gain=g)
+                nn.init.xavier_normal_(m.weight)
+                # nn.init.kaiming_normal_(m.weight)
+                off_diag_penalty_ = (
+                    off_diag_penalty if self._apply_off_diag_penalty(n) else 1.0
+                )
+                m.weight.data = m.weight.data * g * scale * off_diag_penalty_
+                if m.bias is not None:
+                    # m.bias.data.fill_(0.0)
+                    m.bias.data.uniform_(-1e-4, 1e-4)
 
 class DownSampleDWSLayer(DWSLayer):
     def __init__(
