@@ -185,7 +185,8 @@ class DWSLayer(BaseLayer):
                     # m.bias.data.fill_(0.0)
                     m.bias.data.uniform_(-1e-4, 1e-4)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
         new_weights_from_weights = self.weight_to_weight(weights)
         new_weights_from_biases = self.bias_to_weight(biases)
@@ -194,24 +195,28 @@ class DWSLayer(BaseLayer):
         new_biases_from_weights = self.weight_to_bias(weights)
 
         # add and normalize by the number of matrices
-        new_weights = torch.stack(new_weights_from_weights) + torch.stack(new_weights_from_biases)
-        new_biases = torch.stack(new_biases_from_biases) + torch.stack(new_biases_from_weights)
-
-        new_weights /= self.n_matrices
-        new_biases /= self.n_matrices
+        new_weights = [
+            (w0 + w1) / self.n_matrices
+            for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
+        ]
+        new_biases = [
+            (b0 + b1) / self.n_matrices
+            for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
+        ]
 
         if self.add_skip:
-            skip_out_weights = torch.stack(tuple(self.skip(w) for w in weights))
-            skip_out_biases = torch.stack(tuple(self.skip(b) for b in biases))
+            skip_out_weights = [self.skip(w) for w in weights]
+            skip_out_biases = [self.skip(b) for b in biases]
 
-            new_weights += skip_out_weights
-            new_biases += skip_out_biases
+            new_weights = [w + ws for w, ws in zip(new_weights, skip_out_weights)]
+            new_biases = [b + bs for b, bs in zip(new_biases, skip_out_biases)]
 
         # Convert back to tuple of tensors
         new_weights = tuple(new_weights)
         new_biases = tuple(new_biases)
 
         return new_weights, new_biases
+
 
 
 class DownSampleDWSLayer(DWSLayer):
