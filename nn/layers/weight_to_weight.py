@@ -124,34 +124,47 @@ class GeneralMatrixSetLayer(BaseLayer):
 
     def forward(self, x):
         bs = x.shape[0]
-        
-        # Reusable functions to avoid code duplication
-        def reshape_x(x, in_shape, out_features):
-            return x.reshape(bs, x.shape[1], in_shape[self.feature_index], out_features)
+        is_same_index = self.in_index == self.out_index
+        is_out_index_next = self.in_index == self.out_index - 1
 
-        def set_layer_and_reshape(x, in_shape, out_features):
-            x = self.set_layer(x)
-            return reshape_x(x, in_shape, out_features)
-
-        if self.in_index == self.out_index:
+        if is_same_index:
             x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
             x = x.flatten(start_dim=2)
-            x = set_layer_and_reshape(x, self.in_shape, self.out_features)
+            x = self.set_layer(x)
+            x = x.reshape(bs, x.shape[1], self.in_shape[self.feature_index], self.out_features)
             x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
 
-        elif self.in_index == self.out_index - 1:
-            x = x.permute(0, 2, 1, 3).flatten(start_dim=2) if self.first_dim_is_input else self._reduction(x, dim=1)
-            x = set_layer_and_reshape(x, self.out_shape, self.out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-
-        else:
-            x = self._reduction(x, dim=2)
+        elif is_out_index_next:
+            reduction_dim = 1 if is_out_index_next else 2
+            x = self._reduction(x, dim=reduction_dim)
             x = self.set_layer(x)
 
-            if self.last_dim_is_input or self.first_dim_is_output:
-                x = x.reshape(bs, x.shape[1], self.out_shape[0], self.out_features)
-                x = x.permute(0, 2, 1, 3) if self.last_dim_is_input else x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+            if self.first_dim_is_input:
+                x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+                x = self.set_layer(x)
+                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            elif self.last_dim_is_output:
+                x = self._reduction(x, dim=1)
+                x = self.set_layer(x)
+                x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
             else:
+                x = self._reduction(x, dim=1)
+                x = self.set_layer(x)
+                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        else:
+            if self.last_dim_is_input:
+                x = self.set_layer(self._reduction(x, dim=2))
+                x = x.reshape(
+                    x.shape[0], x.shape[1], self.out_shape[0], self.out_features
+                )
+                x = x.permute(0, 2, 1, 3)
+            elif self.first_dim_is_output:
+                x = self.set_layer(x.flatten(start_dim=2))
+                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+
+            else:
+                x = self._reduction(x, dim=2)
+                x = self.set_layer(x)
                 x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
 
         return x
