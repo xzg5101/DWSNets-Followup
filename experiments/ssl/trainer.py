@@ -421,13 +421,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--gpt", type=str2bool, default=True, help="have changes by gpt"
+        "--gpt", type=str2bool, default=True, help="have changed by gpt"
     )
 
     parser.add_argument(
         "--gptchange",
         type=str,
-        choices=["ssltrainer", "layers", "forward"],
         default="nochange",
         help="change made by chatgpt",
     )
