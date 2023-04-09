@@ -128,30 +128,36 @@ class GeneralMatrixSetLayer(BaseLayer):
         is_out_index_next = self.in_index == self.out_index - 1
         is_in_index_next = self.in_index == self.out_index + 1
 
-        if is_same_index or self.first_dim_is_input:
-            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
+        if is_same_index:
+            if self.first_dim_is_input:
+                x = x.permute(0, 2, 1, 3)
             x = x.flatten(start_dim=2)
             x = self.set_layer(x)
             x = x.reshape(bs, x.shape[1], self.in_shape[self.feature_index], self.out_features)
-            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
-
-        if is_out_index_next or is_in_index_next or self.last_dim_is_input:
-            reduction_dim = 1 if is_out_index_next else 2
-            x = self._reduction(x, dim=reduction_dim)
+            if self.first_dim_is_input:
+                x = x.permute(0, 2, 1, 3)
+        elif is_out_index_next:
+            if self.first_dim_is_input:
+                x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+            elif self.last_dim_is_output:
+                x = self._reduction(x, dim=1)
+            else:
+                x = self._reduction(x, dim=1)
             x = self.set_layer(x)
-
-            if self.first_dim_is_input or self.last_dim_is_input:
-                x = x.reshape(bs, x.shape[1], self.out_shape[0], self.out_features)
-                x = x.permute(0, 2, 1, 3) if self.last_dim_is_input else x
-            elif is_out_index_next or is_in_index_next:
-                x = x.unsqueeze(2 if is_out_index_next else 1)
-                x = x.repeat(1, 1, self.out_shape[-1], 1)
-
-        if self.first_dim_is_output:
-            x = self.set_layer(x.flatten(start_dim=2))
-            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        elif is_in_index_next:
+            if self.last_dim_is_input:
+                x = self._reduction(x, dim=2)
+            elif self.first_dim_is_output:
+                x = self.set_layer(x.flatten(start_dim=2))
+                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+            else:
+                x = self._reduction(x, dim=2)
+                x = self.set_layer(x)
+                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
 
         return x
+
 
 
 class SetKroneckerSetLayer(BaseLayer):
