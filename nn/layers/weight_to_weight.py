@@ -295,28 +295,28 @@ class FromFirstLayer(BaseLayer):
             )
 
     def forward(self, x):
+        batch_size = x.shape[0]
         if self.last_dim_is_output:
             # i=0, j=L-1
             # (bs, d0, d1, in_features)
             # (bs, d0, in_features)
             x = self._reduction(x, dim=2)
             # (bs, dL * out_features)
-            x = self.layer(x.flatten(start_dim=1))
+            x = self.layer(x.view(batch_size, -1))
             # (bs, d_{L-1}, dL, out_features)
-            x = (
-                x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-                .unsqueeze(1)
-                .repeat(1, self.out_shape[0], 1, 1)
-            )
+            x = x.view(batch_size, 1, self.out_shape[-1], self.out_features)
+            x = torch.cat([x] * self.out_shape[0], dim=1)
         else:
             # i=0, j != L-1
             # (bs, d0, d1, in_features)
             # (bs, d0, in_features)
             x = self._reduction(x, dim=2)
             # (bs, out_features)
-            x = self.layer(x.flatten(start_dim=1))
+            x = self.layer(x.view(batch_size, -1))
             # (bs, d_j, d_{j+1}, out_features)
-            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+            x = x.view(batch_size, 1, 1, -1)
+            x = torch.cat([x] * self.out_shape[0], dim=1)
+            x = torch.cat([x] * self.out_shape[1], dim=2)
         return x
 
 
