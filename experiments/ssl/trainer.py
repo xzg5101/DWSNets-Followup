@@ -421,7 +421,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--gpt", type=str2bool, default=True, help=None
+        "--gpt", type=str2bool, default=True, help="have changes by gpt"
+    )
+
+    parser.add_argument(
+        "--gptchange",
+        type=str,
+        default="nochange",
+        help="change made by chatgpt",
     )
 
     args = parser.parse_args()
@@ -432,7 +439,7 @@ if __name__ == "__main__":
     if args.wandb:
         name = (
             f"model_embedding_{args.model}_lr_{args.lr}_hid_dim_{args.dim_hidden}_reduction_{args.reduction}"
-            f"_bs_{args.batch_size}_seed_{args.seed}_gpt_{args.gpt}"
+            f"_bs_{args.batch_size}_seed_{args.seed}_gpt_{args.gpt}_gpt_change_{args.gptchange}"
         )
         wandb.init(
             project='weight-space',
