@@ -135,10 +135,6 @@ class GeneralMatrixSetLayer(BaseLayer):
             x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
 
         elif is_out_index_next:
-            reduction_dim = 1 if is_out_index_next else 2
-            x = self._reduction(x, dim=reduction_dim)
-            x = self.set_layer(x)
-
             if self.first_dim_is_input:
                 x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
                 x = self.set_layer(x)
