@@ -427,7 +427,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--gptchange",
         type=str,
-        choices=["ssltrainer", "layers", "firstlayerforward"],
+        choices=["ssltrainer", "layers", "forward"],
         default="nochange",
         help="change made by chatgpt",
     )
