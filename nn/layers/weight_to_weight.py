@@ -123,93 +123,33 @@ class GeneralMatrixSetLayer(BaseLayer):
         )
 
     def forward(self, x):
-        if self.in_index == self.out_index:
-            # this is the case we map W_i to W_i where W_i is the first or last layer's weight matrix
-            if self.first_dim_is_input:
-                # first layer, feature_index is d0
-                # (bs, d1, d0, in_features)
-                x = x.permute(0, 2, 1, 3)
+        bs = x.shape[0]
+        is_same_index = self.in_index == self.out_index
+        is_out_index_next = self.in_index == self.out_index - 1
+        is_in_index_next = self.in_index == self.out_index + 1
 
-            # (bs, set_dim, feature_dim * in_features)
+        if is_same_index or self.first_dim_is_input:
+            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
             x = x.flatten(start_dim=2)
-            # (bs, set_dim, feature_dim * out_features)
             x = self.set_layer(x)
-            # (bs, set_dim, feature_dim, out_features)
-            x = x.reshape(
-                x.shape[0],
-                x.shape[1],
-                self.in_shape[self.feature_index],
-                self.out_features,
-            )
+            x = x.reshape(bs, x.shape[1], self.in_shape[self.feature_index], self.out_features)
+            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
 
-            if self.first_dim_is_input:
-                # permute back to (bs, d0, d1, out_features)
-                x = x.permute(0, 2, 1, 3)
+        if is_out_index_next or is_in_index_next or self.last_dim_is_input:
+            reduction_dim = 1 if is_out_index_next else 2
+            x = self._reduction(x, dim=reduction_dim)
+            x = self.set_layer(x)
 
-        elif (
-            self.in_index == self.out_index - 1
-        ):  # self.in_shape[-1] == self.out_shape[0]:
-            # i -> j  where i=j-1
-            if self.first_dim_is_input:
-                # i=0 and j=1
-                # (bs, d1, d0 * in_features)
-                x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
-                # (bs, d1, out_features)
-                x = self.set_layer(x)
-                # (bs, d1, d2, out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            if self.first_dim_is_input or self.last_dim_is_input:
+                x = x.reshape(bs, x.shape[1], self.out_shape[0], self.out_features)
+                x = x.permute(0, 2, 1, 3) if self.last_dim_is_input else x
+            elif is_out_index_next or is_in_index_next:
+                x = x.unsqueeze(2 if is_out_index_next else 1)
+                x = x.repeat(1, 1, self.out_shape[-1], 1)
 
-            elif self.last_dim_is_output:
-                # i=L-2 and j=L-1
-                # (bs, d_{L-2}, d_{L-1}, in_features)
-                # (bs, d_{L-1}, in_features)
-                x = self._reduction(x, dim=1)
-                # (bs, d_{L-1}, d_L * out_features)
-                x = self.set_layer(x)
-                # (bs, d_{L-1}, d_L, out_features)
-                x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
-            else:
-                # internal layers
-                # (bs, d_i, d_{i+1}, in_features)
-                # (bs, d_{i+1}, in_features)
-                x = self._reduction(x, dim=1)
-                # (bs, d_{i+1}, out_features)
-                x = self.set_layer(x)
-                # (bs, d_{i+1}, d_{i+2}, out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-
-        else:
-            # i = j + 1
-            if self.last_dim_is_input:
-                # i=1, j=0
-                # (bs, d1, d2, in_features)
-                # (bs, d1, in_features)
-                x = self._reduction(x, dim=2)
-                # (bs, d1, d0 * out_features)
-                x = self.set_layer(x)
-                # (bs, d1, d0, out_features)
-                x = x.reshape(
-                    x.shape[0], x.shape[1], self.out_shape[0], self.out_features
-                )
-                # (bs, d0, d1, out_features)
-                x = x.permute(0, 2, 1, 3)
-
-            elif self.first_dim_is_output:
-                # i=L-1, j=L-2
-                # (bs, d_{L-1}, d_L, in_features)
-                # (bs, d_{L-1}, out_features)
-                x = self.set_layer(x.flatten(start_dim=2))
-                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
-
-            else:
-                # internal layers (j = i-1):
-                # (bs, d_i, d_{i+1}, in_feature) -> (bs, d_{i-1}, d_i, out_features)
-                # (bs, d_i, in_feature)
-                x = self._reduction(x, dim=2)
-                # (bs, d_i, out_feature)
-                x = self.set_layer(x)
-                # (bs, d_{i-1}, d_i, out_feature)
-                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+        if self.first_dim_is_output:
+            x = self.set_layer(x.flatten(start_dim=2))
+            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
 
         return x
 
