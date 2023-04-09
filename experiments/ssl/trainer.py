@@ -431,8 +431,8 @@ if __name__ == "__main__":
         help="change made by chatgpt",
     )
 
-    args = parser.parse_args()
-
+    #args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
     # set seed
     set_seed(args.seed)
     # wandb
