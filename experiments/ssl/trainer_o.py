@@ -37,23 +37,28 @@ def evaluate(model, projection, loader):
     total = 0.0
     all_features = []
     all_labels = []
-
-    def concatenate_tensors(tensor_list1, tensor_list2):
-        return tuple(torch.cat((t1, t2)) for t1, t2 in zip(tensor_list1, tensor_list2))
-
     for batch in loader:
         batch = batch.to(device)
-        inputs = concatenate_tensors(batch.weights, batch.aug_weights), concatenate_tensors(batch.biases, batch.aug_biases)
+        inputs = (
+            tuple(
+                torch.cat([w, aug_w])
+                for w, aug_w in zip(batch.weights, batch.aug_weights)
+            ),
+            tuple(
+                torch.cat([b, aug_b])
+                for b, aug_b in zip(batch.biases, batch.aug_biases)
+            ),
+        )
         features = model(inputs)
         zs = projection(features)
         logits, labels = info_nce_loss(zs, args.temperature)
-        loss += nn.functional.cross_entropy(logits, labels, reduction="sum").item()
-        total += labels.size(0)
+        loss += F.cross_entropy(logits, labels, reduction="sum")
+        total += len(labels)
         real_bs = batch.weights[0].shape[0]
-        pred = logits.argmax(dim=1)
-        correct += pred.eq(labels).sum().item()
-        all_features.append(features[:real_bs, :].cpu().numpy())
-        all_labels.extend(batch.label.cpu().numpy())
+        pred = logits.argmax(1)
+        correct += pred.eq(labels).sum()
+        all_features.append(features[:real_bs, :].cpu().numpy().tolist())
+        all_labels.extend(batch.label.cpu().numpy().tolist())
 
     model.train()
     avg_loss = loss / total
