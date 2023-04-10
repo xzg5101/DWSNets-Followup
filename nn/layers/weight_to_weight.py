@@ -202,45 +202,26 @@ class SetKroneckerSetLayer(BaseLayer):
         #     self.attn2 = Attn(self.in_features)
 
     def forward(self, x):
-        # x is [b, d1, d2, f]
-        shapes = x.shape
-        bs = shapes[0]
-        # all
-        out_all = self.lin_all(x)  # [b, d1, d2, f] -> [b, d1, d2, f']
-        # rows
-        pooled_rows = self._reduction(
-            x, dim=1, keepdim=True
-        )  # [b, d1, d2, f] -> [b, 1, d2, f]
-        out_rows = self.lin_n(pooled_rows)  # [b, 1, d2, f] -> [b, 1, d2, f']
-        # cols
-        pooled_cols = self._reduction(
-            x, dim=2, keepdim=True
-        )  # [b, d1, d2, f] -> [b, d1, 1, f]
-        out_cols = self.lin_m(pooled_cols)  # [b, d1, 1, f] -> [b, d1, 1, f']
-        # both
-        # todo: need to understand how we do this generic enough to move it into self._reduction.
-        #  I think we can just flatten (1, 2) and call it on the flat axis
-        # if self.reduction == "max":
-        #     pooled_all, _ = torch.max(
-        #         x.permute(0, 3, 1, 2).flatten(start_dim=2), dim=-1, keepdim=True
-        #     )
-        #     pooled_all = pooled_all.permute(0, 2, 1).unsqueeze(
-        #         1
-        #     )  # [b, d1, d2, f] -> [b, 1, 1, f]
-        # else:
-        # pooled_all = self._reduction(x, dim=(1, 2), keepdim=True)
-        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-        pooled_all = self._reduction(x, dim=2)
-        pooled_all = pooled_all.unsqueeze(1).unsqueeze(
-            1
-        )  # [b, d1, d2, f] -> [b, 1, 1, f]
+    # x is [b, d1, d2, f]
+        bs = x.shape[0]
 
-        out_both = self.lin_both(pooled_all)  # [b, 1, 1, f] -> [b, 1, 1, f']
+        # Compute pooled_rows, pooled_cols, and pooled_all in one step
+        x_permuted = x.permute(0, 3, 1, 2)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+        pooled_all = self._reduction(x_permuted.flatten(start_dim=2), dim=2).unsqueeze(1).unsqueeze(1)
 
-        new_features = (
-            out_all + out_rows + out_cols + out_both
-        ) / 4.0  # [b, d1, d2, f']
-        return new_features
+        # Compute out_all, out_rows, out_cols, and out_both in one step using einsum
+        out = torch.einsum("ijkl,lm->ijkm", x, self.lin_all.weight.T) + \
+            torch.einsum("ijkl,lm->ijkm", pooled_rows, self.lin_n.weight.T) + \
+            torch.einsum("ijkl,lm->ijkm", pooled_cols, self.lin_m.weight.T) + \
+            torch.einsum("ijkl,lm->ijkm", pooled_all, self.lin_both.weight.T)
+
+        # Divide by 4.0 and add bias terms
+        out.div_(4.0)
+        out.add_(self.lin_all.bias + self.lin_n.bias + self.lin_m.bias + self.lin_both.bias)
+
+        return out
 
 
 class FromFirstLayer(BaseLayer):
@@ -294,6 +275,7 @@ class FromFirstLayer(BaseLayer):
                 in_features=in_features, out_features=out_features, bias=bias
             )
 
+    # GPT optimized 
     def forward(self, x):
         batch_size = x.shape[0]
         if self.last_dim_is_output:
@@ -367,6 +349,7 @@ class ToFirstLayer(BaseLayer):
             out_features = self.out_features * self.out_shape[0]  # d0 * out_features
             self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
+    # GPT optimized 
     def forward(self, x):
         bs = x.shape[0]
         d0, d1 = self.out_shape
