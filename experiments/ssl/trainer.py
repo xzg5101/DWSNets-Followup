@@ -424,7 +424,6 @@ if __name__ == "__main__":
         "--gpt",
         type=str,
         default="none",
-        choices=["forward", "layer"],
         help="gpt changes",
     )
 
