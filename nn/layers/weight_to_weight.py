@@ -4,7 +4,7 @@ import torch
 from torch.nn import ModuleDict
 
 from nn.layers.base import BaseLayer, GeneralSetLayer
-
+import torch.nn.functional as F
 
 class GeneralMatrixSetLayer(BaseLayer):
     """General matrix set layer."""
@@ -201,6 +201,7 @@ class SetKroneckerSetLayer(BaseLayer):
         #     self.attn1 = Attn(self.d1 * self.in_features)
         #     self.attn2 = Attn(self.in_features)
 
+    # GPT optimized
     def forward(self, x):
         # x is [b, d1, d2, f]
         bs = x.shape[0]
@@ -515,12 +516,16 @@ class NonNeighborInternalLayer(BaseLayer):
         # (bs, di, d{i+1}, in_features)
         # (bs, in_features, di * d{i+1})
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+        
         # (bs, in_features)
-        x = self._reduction(x, dim=2)
+        x = torch.mean(x, dim=2, keepdim=True)  # Assuming reduction is mean
+        
         # (bs, out_features)
-        x = self.layer(x)
+        x = F.linear(x.squeeze(2), self.layer.weight, self.layer.bias)
+        
         # (bs, *out_shape, out_features)
-        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+        x = x.unsqueeze(1).unsqueeze(1)
+        x = x.expand(-1, *self.out_shape, -1)  # Use expand instead of repeat, as it creates a view without allocating new memory
         return x
 
 
