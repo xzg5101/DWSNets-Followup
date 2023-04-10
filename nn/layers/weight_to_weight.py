@@ -511,7 +511,7 @@ class NonNeighborInternalLayer(BaseLayer):
             out_features=out_features,
             bias=bias,
         )
-
+    # gpt oprimized
     def forward(self, x):
         # (bs, di, d{i+1}, in_features)
         # (bs, in_features, di * d{i+1})
