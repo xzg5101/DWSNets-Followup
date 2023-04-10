@@ -202,7 +202,7 @@ class SetKroneckerSetLayer(BaseLayer):
         #     self.attn2 = Attn(self.in_features)
 
     def forward(self, x):
-    # x is [b, d1, d2, f]
+        # x is [b, d1, d2, f]
         bs = x.shape[0]
 
         # Compute pooled_rows, pooled_cols, and pooled_all in one step
@@ -211,16 +211,14 @@ class SetKroneckerSetLayer(BaseLayer):
         pooled_cols = self._reduction(x, dim=2, keepdim=True)
         pooled_all = self._reduction(x_permuted.flatten(start_dim=2), dim=2).unsqueeze(1).unsqueeze(1)
 
-        # Compute out_all, out_rows, out_cols, and out_both in one step using einsum
-        out = torch.einsum("ijkl,lm->ijkm", x, self.lin_all.weight.T) + \
-            torch.einsum("ijkl,lm->ijkm", pooled_rows, self.lin_n.weight.T) + \
-            torch.einsum("ijkl,lm->ijkm", pooled_cols, self.lin_m.weight.T) + \
-            torch.einsum("ijkl,lm->ijkm", pooled_all, self.lin_both.weight.T)
+        # Compute out_all, out_rows, out_cols, and out_both
+        out_all = self.lin_all(x)
+        out_rows = self.lin_n(pooled_rows)
+        out_cols = self.lin_m(pooled_cols)
+        out_both = self.lin_both(pooled_all)
 
-        # Divide by 4.0 and add bias terms
-        out.div_(4.0)
-        out.add_(self.lin_all.bias + self.lin_n.bias + self.lin_m.bias + self.lin_both.bias)
-
+        # Combine the outputs and return
+        out = (out_all + out_rows + out_cols + out_both) / 4.0
         return out
 
 
