@@ -429,13 +429,7 @@ class FromLastLayer(BaseLayer):
         )
 
     def forward(self, x):
-        # (bs, d{L-1}, dL, in_features)
-        # (bs, dL, in_features)
-        x = self._reduction(x, dim=1)
-        # (bs, out_features)
-        x = self.layer(x.flatten(start_dim=1))
-        # (bs, *out_shape, out_features)
-        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+        x = self.layer(x.mean(dim=1).view(x.size(0), -1))[..., None, None].expand(-1, *self.out_shape, -1)
         return x
 
 
