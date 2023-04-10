@@ -427,7 +427,7 @@ class FromLastLayer(BaseLayer):
             out_features=out_features,  # out_features
             bias=bias,
         )
-
+    # GPT optimized 
     def forward(self, x):
         x = self.layer(x.mean(dim=1).view(x.size(0), -1))[..., None, None].expand(-1, *self.out_shape, -1)
         return x
@@ -470,19 +470,24 @@ class ToLastLayer(BaseLayer):
             out_features=out_features * self.out_shape[-1],  # out_features * dL
             bias=bias,
         )
-
+    # GPT optimized 
     def forward(self, x):
         # (bs, di, d{i+1}, in_features)
         # (bs, in_features, di * d{i+1})
-        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+        x = x.permute(0, 3, 1, 2).flatten(2)
+        
         # (bs, in_features)
         x = self._reduction(x, dim=2)
+        
         # (bs, dL * out_features)
         x = self.layer(x)
+        
         # (bs, dL, out_features)
-        x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+        x = x.view(x.size(0), self.out_shape[-1], self.out_features)
+        
         # (bs, d{L-1}, dL, out_features)
-        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+        x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
+        
         return x
 
 
