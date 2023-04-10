@@ -368,29 +368,25 @@ class ToFirstLayer(BaseLayer):
             self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
     def forward(self, x):
+        bs = x.shape[0]
+        d0, d1 = self.out_shape
+
         if self.first_dim_is_output:
-            # i=L-1, j=0
-            # (bs, d{L-1}, dL, in_features)
-            # (bs, dL, in_features)
+            # (bs, d{L-1}, dL, in_features) -> (bs, dL, in_features)
             x = self._reduction(x, dim=1)
-            # (bs, d0 * out_features)
-            x = self.layer(x.flatten(start_dim=1))
-            # (bs, d0, out_features)
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            # (bs, d0, d1, out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         else:
-            # (bs, dj, d{j+1}, in_features)
-            # (bs, in_features, dj * d{j+1})
+            # (bs, dj, d{j+1}, in_features) -> (bs, in_features, dj * d{j+1})
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-            # (bs, in_features)
+            # (bs, in_features) -> (bs, in_features)
             x = self._reduction(x, dim=2)
-            # (bs, d0 * out_features)
-            x = self.layer(x.flatten(start_dim=1))
-            # (bs, d0, out_features)
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            # (bs, d0, d1, out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+
+        # (bs, in_features) -> (bs, d0 * out_features)
+        x = self.layer(x.flatten(start_dim=1))
+        # (bs, d0 * out_features) -> (bs, d0, out_features)
+        x = x.reshape(bs, d0, self.out_features)
+        # (bs, d0, out_features) -> (bs, d0, d1, out_features)
+        x = x.unsqueeze(2).expand(bs, d0, d1, self.out_features)
+
         return x
 
 
