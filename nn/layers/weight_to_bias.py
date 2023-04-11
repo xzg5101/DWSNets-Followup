@@ -80,6 +80,7 @@ class SameLayer(BaseLayer):
                 set_layer=set_layer,
             )
 
+    # chatGPT optimized
     def forward(self, x):
         # Flatten input
         if self.is_input_layer:

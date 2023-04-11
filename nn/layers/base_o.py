@@ -5,12 +5,12 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-# GPT optimized
+
 class BaseLayer(nn.Module):
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
+        in_features,
+        out_features,
         in_shape: Optional[Tuple] = None,
         out_shape: Optional[Tuple] = None,
         bias: bool = True,
@@ -20,19 +20,18 @@ class BaseLayer(nn.Module):
         set_layer: str = "ds",
     ):
         super().__init__()
+        assert set_layer in ["ds", "sab"]
 
         self.in_features = in_features
         self.out_features = out_features
         self.in_shape = in_shape
         self.out_shape = out_shape
         self.bias = bias
+        assert reduction in ["mean", "sum", "attn", "max"]
         self.reduction = reduction
+        self.b = None
         self.n_fc_layers = n_fc_layers
         self.num_heads = num_heads
-
-        assert set_layer in ["ds", "sab"], "Invalid set_layer"
-        assert reduction in ["mean", "sum", "attn", "max"], "Invalid reduction"
-        #self.mlp = self._get_mlp(in_features, out_features, bias)
 
     def _get_mlp(self, in_features, out_features, bias=False):
         layers = [nn.Linear(in_features, out_features, bias=bias)]
@@ -56,9 +55,12 @@ class BaseLayer(nn.Module):
         elif self.reduction == "sum":
             x = x.sum(dim=dim, keepdim=keepdim)
         elif self.reduction == "attn":
-            raise NotImplementedError("Attention reduction not implemented")
+            assert x.ndim == 3
+            raise NotImplementedError
         elif self.reduction == "max":
             x, _ = torch.max(x, dim=dim, keepdim=keepdim)
+        else:
+            raise ValueError(f"invalid reduction, got {self.reduction}")
         return x
 
 
