@@ -359,63 +359,48 @@ class WeightToBiasBlock(BaseLayer):
         self.bias_shapes = bias_shapes
         self.n_layers = len(bias_shapes)
 
-        self.layers = ModuleDict()
-        # construct layers:
+        self.layers = self._construct_layers()
+
+    def _construct_layers(self):
+        layers = ModuleDict()
+        layer_config = {
+            'reduction': self.reduction,
+            'bias': self.bias,
+            'num_heads': self.num_heads,
+            'set_layer': self.set_layer,
+            'n_fc_layers': self.n_fc_layers
+        }
+        
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                if i == j:
-                    self.layers[f"{i}_{j}"] = SameLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=weight_shapes[i],
-                        out_shape=bias_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        num_heads=num_heads,
-                        set_layer=set_layer,
-                        n_fc_layers=n_fc_layers,
-                        is_input_layer=(
-                            i == 0
-                        ),  # todo: make sure this condition is correct
-                        is_output_layer=(
-                            j == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
-                elif i == j + 1:
-                    self.layers[f"{i}_{j}"] = SuccessiveLayers(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=weight_shapes[i],
-                        out_shape=bias_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        num_heads=num_heads,
-                        set_layer=set_layer,
-                        n_fc_layers=n_fc_layers,
-                        first_dim_is_output=(
-                            i == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
-                else:
-                    self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=weight_shapes[i],
-                        out_shape=bias_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        # todo: make sure this condition is correct
-                        first_dim_is_input=(i == 0),
-                        first_dim_is_output=(i == self.n_layers - 1),
-                        last_dim_is_output=(j == self.n_layers - 1),
-                    )
+                layer_class = self._select_layer_class(i, j)
+                layer_config.update({
+                    'in_features': self.in_features,
+                    'out_features': self.out_features,
+                    'in_shape': self.weight_shapes[i],
+                    'out_shape': self.bias_shapes[j],
+                    'is_input_layer': i == 0,
+                    'is_output_layer': j == self.n_layers - 1,
+                    'first_dim_is_output': i == self.n_layers - 1,
+                    'first_dim_is_input': i == 0,
+                    'last_dim_is_output': j == self.n_layers - 1
+                })
+                layers[f"{i}_{j}"] = layer_class(**layer_config)
+        
+        return layers
+
+    def _select_layer_class(self, i, j):
+        if i == j:
+            return SameLayer
+        elif i == j + 1:
+            return SuccessiveLayers
+        else:
+            return NonNeighborInternalLayer
 
     def forward(self, x: Tuple[torch.tensor]):
-        out_weights = [
-            0.0,
-        ] * len(x)
+        out_weights = [0.0] * len(x)
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                out_weights[j] = out_weights[j] + self.layers[f"{i}_{j}"](x[i])
+                out_weights[j] += self.layers[f"{i}_{j}"](x[i])
 
         return tuple(out_weights)
