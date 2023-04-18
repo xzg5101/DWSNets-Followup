@@ -80,21 +80,31 @@ class SameLayer(BaseLayer):
                 set_layer=set_layer,
             )
 
-    # chatGPT optimized
     def forward(self, x):
-        # Flatten input
         if self.is_input_layer:
+            # (bs, d0, d1, in_features)
+            # (bs, d1, d0 * in_features)
             x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
-        elif not self.is_output_layer:
-            x = self._reduction(x, dim=1)
-        
-        # Apply layer
-        x = self.layer(x)
+            # (bs, d1, out_features)
+            x = self.layer(x)
 
-        # Reshape output
-        if self.is_output_layer:
+        elif self.is_output_layer:
+            # (bs, d{L-1}, dL, in_features)
+            # (bs, dL, in_features)
+            x = self._reduction(x, dim=1)
+            # (bs, dL * in_features)
             x = x.flatten(start_dim=1)
+            # (bs, dL * out_features)
+            x = self.layer(x)
+            # (bs, dL, out_features)
             x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+
+        else:
+            # (bs, di, d{i+1}, in_features)
+            # (bs, d{i+1}, in_features)
+            x = self._reduction(x, dim=1)
+            # (bs, d{i+1}, out_features)
+            x = self.layer(x)
 
         return x
 
