@@ -191,10 +191,10 @@ class SetKroneckerSetLayer(BaseLayer):
         self.in_features = in_features
         self.reduction = reduction
 
-        self.lin_all = nn.Linear(in_features, out_features, bias=bias)
-        self.lin_n = nn.Linear(in_features, out_features, bias=bias)
-        self.lin_m = nn.Linear(in_features, out_features, bias=bias)
-        self.lin_both = nn.Linear(in_features, out_features, bias=bias)
+        self.lin_all = self.Linear(in_features, out_features, bias=bias)
+        self.lin_n = self.Linear(in_features, out_features, bias=bias)
+        self.lin_m = self.Linear(in_features, out_features, bias=bias)
+        self.lin_both = self.Linear(in_features, out_features, bias=bias)
 
         # TODO: add attention support
 
