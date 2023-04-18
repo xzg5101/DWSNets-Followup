@@ -21,10 +21,18 @@ class BaseLayer(nn.Module):
     ):
         super().__init__()
 
+        self.in_features = in_features
+        self.out_features = out_features
+        self.in_shape = in_shape
+        self.out_shape = out_shape
+        self.bias = bias
+        self.reduction = reduction
+        self.n_fc_layers = n_fc_layers
+        self.num_heads = num_heads
+
         assert set_layer in ["ds", "sab"], "Invalid set_layer"
         assert reduction in ["mean", "sum", "attn", "max"], "Invalid reduction"
 
-        self.reduction = reduction
         self.mlp = self._get_mlp(in_features, out_features, n_fc_layers, bias)
 
     def _get_mlp(self, in_features, out_features, n_fc_layers, bias=False):
