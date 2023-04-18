@@ -21,45 +21,28 @@ class BaseLayer(nn.Module):
     ):
         super().__init__()
 
-        self.in_features = in_features
-        self.out_features = out_features
-        self.in_shape = in_shape
-        self.out_shape = out_shape
-        self.bias = bias
-        self.reduction = reduction
-        self.n_fc_layers = n_fc_layers
-        self.num_heads = num_heads
-
         assert set_layer in ["ds", "sab"], "Invalid set_layer"
         assert reduction in ["mean", "sum", "attn", "max"], "Invalid reduction"
-        #self.mlp = self._get_mlp(in_features, out_features, bias)
 
-    def _get_mlp(self, in_features, out_features, bias=False):
+        self.reduction = reduction
+        self.mlp = self._get_mlp(in_features, out_features, n_fc_layers, bias)
+
+    def _get_mlp(self, in_features, out_features, n_fc_layers, bias=False):
         layers = [nn.Linear(in_features, out_features, bias=bias)]
-        for _ in range(self.n_fc_layers - 1):
-            layers.extend([nn.ReLU(), nn.Linear(out_features, out_features, bias=bias)])
-        return nn.Sequential(*layers)
-
-    def _init_bias(self, row_equal, col_equal, row_dim, col_dim):
-        if self.bias:
-            b = torch.empty(
-                1 if row_equal else row_dim,
-                1 if col_equal else col_dim,
-                self.out_features,
-            )
-            b.uniform_(-1e-2, 1e-2)
-            self.b = nn.Parameter(b)
+        for _ in range(n_fc_layers - 1):
+            layers.append(nn.ReLU(inplace=True))
+            layers.append(nn.Linear(out_features, out_features, bias=bias))
+        return nn.ModuleList(layers)
 
     def _reduction(self, x: torch.tensor, dim=1, keepdim=False):
         if self.reduction == "mean":
-            x = x.mean(dim=dim, keepdim=keepdim)
+            return x.mean(dim=dim, keepdim=keepdim)
         elif self.reduction == "sum":
-            x = x.sum(dim=dim, keepdim=keepdim)
+            return x.sum(dim=dim, keepdim=keepdim)
         elif self.reduction == "attn":
             raise NotImplementedError("Attention reduction not implemented")
-        elif self.reduction == "max":
-            x, _ = torch.max(x, dim=dim, keepdim=keepdim)
-        return x
+        else:  # self.reduction == "max":
+            return torch.max(x, dim=dim, keepdim=keepdim).values
 
 
 class MAB(nn.Module):
