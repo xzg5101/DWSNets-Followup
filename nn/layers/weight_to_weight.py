@@ -168,7 +168,7 @@ class GeneralMatrixSetLayer(BaseLayer):
 
 
 
-class SetKroneckerSetLayer(nn.Module):
+class SetKroneckerSetLayer(BaseLayer):
     def __init__(
         self,
         in_features,
