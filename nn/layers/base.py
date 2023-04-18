@@ -32,25 +32,34 @@ class BaseLayer(nn.Module):
 
         assert set_layer in ["ds", "sab"], "Invalid set_layer"
         assert reduction in ["mean", "sum", "attn", "max"], "Invalid reduction"
+        #self.mlp = self._get_mlp(in_features, out_features, bias)
 
-        self.mlp = self._get_mlp(in_features, out_features, n_fc_layers, bias)
-
-    def _get_mlp(self, in_features, out_features, n_fc_layers, bias=False):
+    def _get_mlp(self, in_features, out_features, bias=False):
         layers = [nn.Linear(in_features, out_features, bias=bias)]
-        for _ in range(n_fc_layers - 1):
-            layers.append(nn.ReLU(inplace=True))
-            layers.append(nn.Linear(out_features, out_features, bias=bias))
-        return nn.ModuleList(layers)
+        for _ in range(self.n_fc_layers - 1):
+            layers.extend([nn.ReLU(), nn.Linear(out_features, out_features, bias=bias)])
+        return nn.Sequential(*layers)
+
+    def _init_bias(self, row_equal, col_equal, row_dim, col_dim):
+        if self.bias:
+            b = torch.empty(
+                1 if row_equal else row_dim,
+                1 if col_equal else col_dim,
+                self.out_features,
+            )
+            b.uniform_(-1e-2, 1e-2)
+            self.b = nn.Parameter(b)
 
     def _reduction(self, x: torch.tensor, dim=1, keepdim=False):
         if self.reduction == "mean":
-            return x.mean(dim=dim, keepdim=keepdim)
+            x = x.mean(dim=dim, keepdim=keepdim)
         elif self.reduction == "sum":
-            return x.sum(dim=dim, keepdim=keepdim)
+            x = x.sum(dim=dim, keepdim=keepdim)
         elif self.reduction == "attn":
             raise NotImplementedError("Attention reduction not implemented")
-        else:  # self.reduction == "max":
-            return torch.max(x, dim=dim, keepdim=keepdim).values
+        elif self.reduction == "max":
+            x, _ = torch.max(x, dim=dim, keepdim=keepdim)
+        return x
 
 
 class MAB(nn.Module):
