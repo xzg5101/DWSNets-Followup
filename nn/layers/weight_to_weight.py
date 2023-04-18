@@ -186,47 +186,41 @@ class SetKroneckerSetLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
             bias=bias,
         )
-
+        # todo: bias is overparametrized here. we can reduce the number of parameters
         self.d1, self.d2 = in_shape
         self.in_features = in_features
-        self.reduction = reduction
 
-        self.lin_all = self.Linear(in_features, out_features, bias=bias)
-        self.lin_n = self.Linear(in_features, out_features, bias=bias)
-        self.lin_m = self.Linear(in_features, out_features, bias=bias)
-        self.lin_both = self.Linear(in_features, out_features, bias=bias)
+        self.lin_all = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_n = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_m = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_both = self._get_mlp(in_features, out_features, bias=bias)
 
-        # TODO: add attention support
+        # todo: add attention support
+        # if reduction == "attn":
+        #     self.attn0 = Attn(self.d2 * self.in_features)
+        #     self.attn1 = Attn(self.d1 * self.in_features)
+        #     self.attn2 = Attn(self.in_features)
 
+    # GPT optimized
     def forward(self, x):
+        # x is [b, d1, d2, f]
         bs = x.shape[0]
-        
-        out_all = self.lin_all(x)
-        
-        pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        out_rows = self.lin_n(pooled_rows)
-        
-        pooled_cols = self._reduction(x, dim=2, keepdim=True)
-        out_cols = self.lin_m(pooled_cols)
-        
-        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-        pooled_all = self._reduction(x, dim=2)
-        pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
 
+        # Compute pooled_rows, pooled_cols, and pooled_all in one step
+        x_permuted = x.permute(0, 3, 1, 2)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+        pooled_all = self._reduction(x_permuted.flatten(start_dim=2), dim=2).unsqueeze(1).unsqueeze(1)
+
+        # Compute out_all, out_rows, out_cols, and out_both
+        out_all = self.lin_all(x)
+        out_rows = self.lin_n(pooled_rows)
+        out_cols = self.lin_m(pooled_cols)
         out_both = self.lin_both(pooled_all)
 
-        new_features = (out_all + out_rows + out_cols + out_both) / 4.0
-        return new_features
-
-    def _reduction(self, x, dim, keepdim=False):
-        if self.reduction == "max":
-            return torch.max(x, dim=dim, keepdim=keepdim)[0]
-        elif self.reduction == "mean":
-            return torch.mean(x, dim=dim, keepdim=keepdim)
-        elif self.reduction == "sum":
-            return torch.sum(x, dim=dim, keepdim=keepdim)
-        else:
-            raise ValueError(f"Invalid reduction type: {self.reduction}")
+        # Combine the outputs and return
+        out = (out_all + out_rows + out_cols + out_both) / 4.0
+        return out
 
 
 class FromFirstLayer(BaseLayer):
@@ -243,16 +237,6 @@ class FromFirstLayer(BaseLayer):
         n_fc_layers: int = 1,
         last_dim_is_output=False,
     ):
-        """
-
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        """
         super().__init__(
             in_features,
             out_features,
@@ -264,46 +248,30 @@ class FromFirstLayer(BaseLayer):
         )
         self.last_dim_is_output = last_dim_is_output
 
+        self.in_features_d0 = self.in_features * self.in_shape[0]
+        self.out_features_dL = self.out_features * self.out_shape[1]
+
         if self.last_dim_is_output:
-            # i=0, j=L-1
-            in_features = self.in_features * self.in_shape[0]  # d0 * in_features
-            out_features = self.out_features * self.out_shape[1]  # dL * out_features
             self.layer = self._get_mlp(
-                in_features=in_features, out_features=out_features, bias=bias
+                in_features=self.in_features_d0, out_features=self.out_features_dL, bias=bias
             )
-
         else:
-            # i=0, j != L-1
-            in_features = self.in_features * self.in_shape[0]  # d0 * in_features
-            out_features = self.out_features  # out_features
             self.layer = self._get_mlp(
-                in_features=in_features, out_features=out_features, bias=bias
+                in_features=self.in_features_d0, out_features=self.out_features, bias=bias
             )
 
-    # GPT optimized 
     def forward(self, x):
-        batch_size = x.shape[0]
+        x = self._reduction(x, dim=2)
+        x = self.layer(x.flatten(start_dim=1))
+
         if self.last_dim_is_output:
-            # i=0, j=L-1
-            # (bs, d0, d1, in_features)
-            # (bs, d0, in_features)
-            x = self._reduction(x, dim=2)
-            # (bs, dL * out_features)
-            x = self.layer(x.view(batch_size, -1))
-            # (bs, d_{L-1}, dL, out_features)
-            x = x.view(batch_size, 1, self.out_shape[-1], self.out_features)
-            x = torch.cat([x] * self.out_shape[0], dim=1)
+            x = (
+                x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+                .unsqueeze(1)
+                .repeat(1, self.out_shape[0], 1, 1)
+            )
         else:
-            # i=0, j != L-1
-            # (bs, d0, d1, in_features)
-            # (bs, d0, in_features)
-            x = self._reduction(x, dim=2)
-            # (bs, out_features)
-            x = self.layer(x.view(batch_size, -1))
-            # (bs, d_j, d_{j+1}, out_features)
-            x = x.view(batch_size, 1, 1, -1)
-            x = torch.cat([x] * self.out_shape[0], dim=1)
-            x = torch.cat([x] * self.out_shape[1], dim=2)
+            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
