@@ -228,15 +228,25 @@ class FromFirstLayer(BaseLayer):
 
     def __init__(
         self,
-        in_features,
-        out_features,
-        in_shape,
-        out_shape,
+        in_features: int,
+        out_features: int,
+        in_shape: tuple,
+        out_shape: tuple,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
-        last_dim_is_output=False,
+        last_dim_is_output: bool = False,
     ):
+        """
+        :param in_features: input feature dimension
+        :param out_features: output feature dimension
+        :param in_shape: input shape (tuple)
+        :param out_shape: output shape (tuple)
+        :param bias: whether to use bias in the layers (default: True)
+        :param reduction: reduction method to apply (default: "max")
+        :param n_fc_layers: number of fully connected layers (default: 1)
+        :param last_dim_is_output: whether last dimension is output (default: False)
+        """
         super().__init__(
             in_features,
             out_features,
@@ -247,29 +257,21 @@ class FromFirstLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
         )
         self.last_dim_is_output = last_dim_is_output
+        self.layer = self._create_mlp_layer(in_features, out_features, bias)
 
-        self.in_features_d0 = self.in_features * self.in_shape[0]
-        self.out_features_dL = self.out_features * self.out_shape[1]
-
+    def _create_mlp_layer(self, in_features: int, out_features: int, bias: bool):
+        in_features *= self.in_shape[0]
         if self.last_dim_is_output:
-            self.layer = self._get_mlp(
-                in_features=self.in_features_d0, out_features=self.out_features_dL, bias=bias
-            )
-        else:
-            self.layer = self._get_mlp(
-                in_features=self.in_features_d0, out_features=self.out_features, bias=bias
-            )
+            out_features *= self.out_shape[1]
+        return self._get_mlp(in_features=in_features, out_features=out_features, bias=bias)
 
     def forward(self, x):
         x = self._reduction(x, dim=2)
         x = self.layer(x.flatten(start_dim=1))
 
         if self.last_dim_is_output:
-            x = (
-                x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-                .unsqueeze(1)
-                .repeat(1, self.out_shape[0], 1, 1)
-            )
+            x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         else:
             x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
