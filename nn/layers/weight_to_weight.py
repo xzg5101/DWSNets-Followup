@@ -178,7 +178,14 @@ class SetKroneckerSetLayer(BaseLayer):
         bias=True,
         n_fc_layers=1,
     ):
-        super().__init__()
+        super().__init__(
+            in_features=in_features,
+            out_features=out_features,
+            in_shape=in_shape,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            bias=bias,
+        )
 
         self.d1, self.d2 = in_shape
         self.in_features = in_features
