@@ -134,17 +134,17 @@ class SetLayer(BaseLayer):
     def forward(self, x):
         # set dim is 1
         if self.reduction == "mean":
-            xm = torch.mean(x, dim=1, keepdim=True)
+            xm = x.mean(1, keepdim=True)
         elif self.reduction == "sum":
-            xm = torch.sum(x, dim=1, keepdim=True)
+            xm = x.sum(1, keepdim=True)
         elif self.reduction == "attn":
             xm = self.attn(x.transpose(-1, -2), keepdim=True).transpose(-1, -2)
         else:
             xm, _ = torch.max(x, dim=1, keepdim=True)
 
-        xm = F.layer_norm(xm, xm.shape[1:])
-        x = F.linear(x, self.Gamma.weight, self.Gamma.bias)
-        x = x - F.layer_norm(xm, x.shape[1:])
+        xm = self.Lambda(xm)
+        x = self.Gamma(x)
+        x = x - xm
         return x
 
 
@@ -168,18 +168,21 @@ class GeneralSetLayer(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-        self.set_layer = dict(
-            ds=SetLayer(
+        
+        if set_layer == "ds":
+            self.set_layer = SetLayer(
                 in_features=in_features,
                 out_features=out_features,
                 bias=bias,
                 reduction=reduction,
                 n_fc_layers=n_fc_layers,
-            ),
-            sab=SAB(
+            )
+        elif set_layer == "sab":
+            self.set_layer = SAB(
                 in_features=in_features, out_features=out_features, num_heads=num_heads
-            ),
-        )[set_layer]
+            )
+        else:
+            raise ValueError(f"Invalid set_layer option: {set_layer}")
 
     def forward(self, x):
         return self.set_layer(x)
