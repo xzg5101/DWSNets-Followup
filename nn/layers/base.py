@@ -98,15 +98,18 @@ class MAB(nn.Module):
         return O
 
 class SAB(nn.Module):
-    def __init__(self, in_features, out_features, num_heads=8, ln=False):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        num_heads: int = 8,
+        ln: bool = False,
+    ) -> None:
         super().__init__()
         self.mab = MAB(in_features, in_features, out_features, num_heads, ln=ln)
 
-    def forward(self, X):
-        with torch.no_grad():
-            output = self.mab(X, X)
-        return output
-
+    def forward(self, X: Tensor) -> Tensor:
+        return self.mab(X, X)
 
 class SetLayer(BaseLayer):
     """
