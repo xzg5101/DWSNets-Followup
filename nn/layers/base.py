@@ -147,22 +147,16 @@ class SetLayer(BaseLayer):
         x = x - xm
         return x
 
-from typing import Callable, Dict
 class GeneralSetLayer(BaseLayer):
-    _set_layers: Dict[str, Callable] = {
-        "ds": SetLayer,
-        "sab": SAB,
-    }
-
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
+        in_features,
+        out_features,
         bias: bool = True,
         reduction: str = "mean",
         n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "ds",
+        num_heads=8,
+        set_layer="ds",
     ):
         super().__init__(
             in_features=in_features,
@@ -174,10 +168,8 @@ class GeneralSetLayer(BaseLayer):
             set_layer=set_layer,
         )
         
-        SetLayerClass = self._set_layers[set_layer]
-        
         if set_layer == "ds":
-            self.set_layer = SetLayerClass(
+            self.set_layer = SetLayer(
                 in_features=in_features,
                 out_features=out_features,
                 bias=bias,
@@ -185,11 +177,11 @@ class GeneralSetLayer(BaseLayer):
                 n_fc_layers=n_fc_layers,
             )
         elif set_layer == "sab":
-            self.set_layer = SetLayerClass(
-                in_features=in_features,
-                out_features=out_features,
-                num_heads=num_heads
+            self.set_layer = SAB(
+                in_features=in_features, out_features=out_features, num_heads=num_heads
             )
+        else:
+            raise ValueError("Invalid set_layer value")
 
     def forward(self, x):
         return self.set_layer(x)
