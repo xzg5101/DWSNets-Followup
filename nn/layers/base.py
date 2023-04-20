@@ -66,11 +66,11 @@ class BaseLayer(nn.Module):
 
 
 class MAB(nn.Module):
-    def __init__(self, dim_Q, dim_K, dim_V, num_heads, batch_size, ln=False):
+    def __init__(self, dim_Q, dim_K, dim_V, num_heads, ln=False):
         super(MAB, self).__init__()
         self.dim_V = dim_V
         self.num_heads = num_heads
-        self.batch_size = batch_size
+        self.batch_size = 512
         self.fc_q = nn.Linear(dim_Q, dim_V * num_heads)
         self.fc_k = nn.Linear(dim_K, dim_V * num_heads)
         self.fc_v = nn.Linear(dim_K, dim_V * num_heads)
