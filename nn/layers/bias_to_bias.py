@@ -171,6 +171,7 @@ class SelfToOtherLayer(BaseLayer):
 
         return x
 
+import torch.nn as nn
 class BiasToBiasBlock(BaseLayer):
     def __init__(
         self,
@@ -197,17 +198,35 @@ class BiasToBiasBlock(BaseLayer):
         self.shapes = shapes
         self.n_layers = len(shapes)
 
-        self.layer = SelfToOtherLayer(
-            in_features=in_features,
-            out_features=out_features,
-            in_shape=shapes[-1],
-            out_shape=shapes[-1],
-            reduction=reduction,
-            bias=bias,
-            n_fc_layers=n_fc_layers,
-            first_dim_is_output=False,  # set first_dim_is_output to False
-            last_dim_is_output=True,
-        )
+        # Define the layers attribute here
+        self.layers = nn.ModuleList([
+            nn.ModuleList([
+                SelfToSelfLayer(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=shapes[i],
+                    out_shape=shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    num_heads=num_heads,
+                    set_layer=set_layer,
+                    n_fc_layers=n_fc_layers,
+                    is_output_layer=(j == self.n_layers - 1),
+                ) if i == j else SelfToOtherLayer(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=shapes[i],
+                    out_shape=shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    n_fc_layers=n_fc_layers,
+                    first_dim_is_output=(i == self.n_layers - 1),
+                    last_dim_is_output=(j == self.n_layers - 1),
+                )
+                for j in range(self.n_layers)
+            ])
+            for i in range(self.n_layers)
+        ])
 
     def forward(self, x: Tuple[torch.tensor]):
         out_biases = [
@@ -215,7 +234,7 @@ class BiasToBiasBlock(BaseLayer):
         ] * len(x)
         inputs = x[0].unsqueeze(1).repeat(1, self.n_layers, 1, 1)  # reshape the first input tensor and repeat it along the second dimension
         for i in range(self.n_layers):
-            layer_outputs = self.layers[f"{i}_{i}"](inputs[:, i, :, :])  # compute the output for the diagonal layer
+            layer_outputs = self.layers[i][i](inputs[:, i, :, :])  # compute the output for the diagonal layer
             out_biases = out_biases + layer_outputs.tolist()  # add the outputs to the biases
             if i < self.n_layers - 1:
                 inputs = torch.bmm(layer_outputs, inputs)  # perform a batch matrix multiplication with the previous inputs
