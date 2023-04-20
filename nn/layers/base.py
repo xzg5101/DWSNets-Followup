@@ -5,71 +5,59 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from enum import Enum
-class SetLayer(Enum):
-    DS = "ds"
-    SAB = "sab"
-
-
-class Reduction(Enum):
-    MEAN = "mean"
-    SUM = "sum"
-    ATTN = "attn"
-    MAX = "max"
-
 
 class BaseLayer(nn.Module):
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
+        in_features,
+        out_features,
         in_shape: Optional[Tuple] = None,
         out_shape: Optional[Tuple] = None,
         bias: bool = True,
-        reduction: Reduction = Reduction.MEAN,
+        reduction: str = "mean",
         n_fc_layers: int = 1,
         num_heads: int = 8,
-        set_layer: SetLayer = SetLayer.DS,
+        set_layer: str = "ds",
     ):
         super().__init__()
+        assert set_layer in ["ds", "sab"]
 
         self.in_features = in_features
         self.out_features = out_features
         self.in_shape = in_shape
         self.out_shape = out_shape
         self.bias = bias
+        assert reduction in ["mean", "sum", "attn", "max"]
         self.reduction = reduction
         self.b = None
         self.n_fc_layers = n_fc_layers
         self.num_heads = num_heads
 
-        self.mlp = self._get_mlp(in_features, out_features, bias)
-
-    def _get_mlp(self, in_features: int, out_features: int, bias: bool = False) -> nn.Sequential:
+    def _get_mlp(self, in_features, out_features, bias=False):
         layers = [nn.Linear(in_features, out_features, bias=bias)]
         for _ in range(self.n_fc_layers - 1):
             layers.extend([nn.ReLU(), nn.Linear(out_features, out_features, bias=bias)])
         return nn.Sequential(*layers)
 
-    def _init_bias(self, row_equal: bool, col_equal: bool, row_dim: int, col_dim: int):
+    def _init_bias(self, row_equal, col_equal, row_dim, col_dim):
         if self.bias:
             b = torch.empty(
                 1 if row_equal else row_dim,
                 1 if col_equal else col_dim,
                 self.out_features,
             )
-            nn.init.uniform_(b, -1e-2, 1e-2)
+            b.uniform_(-1e-2, 1e-2)
             self.b = nn.Parameter(b)
 
-    def _reduction(self, x: torch.tensor, dim: int = 1, keepdim: bool = False) -> torch.tensor:
-        if self.reduction == Reduction.MEAN.value:
+    def _reduction(self, x: torch.tensor, dim=1, keepdim=False):
+        if self.reduction == "mean":
             x = x.mean(dim=dim, keepdim=keepdim)
-        elif self.reduction == Reduction.SUM.value:
+        elif self.reduction == "sum":
             x = x.sum(dim=dim, keepdim=keepdim)
-        elif self.reduction == Reduction.ATTN.value:
+        elif self.reduction == "attn":
             assert x.ndim == 3
             raise NotImplementedError
-        elif self.reduction == Reduction.MAX.value:
+        elif self.reduction == "max":
             x, _ = torch.max(x, dim=dim, keepdim=keepdim)
         else:
             raise ValueError(f"invalid reduction, got {self.reduction}")
