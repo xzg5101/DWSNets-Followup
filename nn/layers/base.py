@@ -97,20 +97,35 @@ class MAB(nn.Module):
         O = O if getattr(self, "ln1", None) is None else self.ln1(O)
         return O
 
-from torch import Tensor
-class SAB(nn.Module):
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        num_heads: int = 8,
-        ln: bool = False,
-    ) -> None:
-        super().__init__()
+class SAB(BaseLayer):
+    def __init__(self, in_features: int, out_features: int, num_heads: int = 8, ln: bool = False):
+        """
+        Initializes the SAB (Set Aggregation Block) layer.
+        
+        Args:
+            in_features (int): The number of input features.
+            out_features (int): The number of output features.
+            num_heads (int, optional): The number of attention heads. Defaults to 8.
+            ln (bool, optional): Whether to use layer normalization. Defaults to False.
+        """
+        super().__init__(in_features, out_features)
         self.mab = MAB(in_features, in_features, out_features, num_heads, ln=ln)
+        self._cache = {}
 
-    def forward(self, X: Tensor) -> Tensor:
-        return self.mab(X, X)
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the forward pass of the SAB layer.
+        
+        Args:
+            X (torch.Tensor): The input tensor.
+            
+        Returns:
+            torch.Tensor: The output tensor.
+        """
+        x_id = id(X)
+        if x_id not in self._cache:
+            self._cache[x_id] = self.mab(X, X)
+        return self._cache[x_id]
 
 class SetLayer(BaseLayer):
     """
