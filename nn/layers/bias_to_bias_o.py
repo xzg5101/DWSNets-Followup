@@ -6,35 +6,34 @@ from torch.nn import ModuleDict
 from nn.layers.base import BaseLayer, GeneralSetLayer
 
 
-from typing import Tuple
-
 class SelfToSelfLayer(BaseLayer):
     """Mapping bi -> bi"""
 
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        in_shape: Tuple[int, int],
-        out_shape: Tuple[int, int],
+        in_features,
+        out_features,
+        in_shape,
+        out_shape,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
         num_heads: int = 8,
         set_layer: str = "sab",
-        is_output_layer: bool = False,
+        is_output_layer=False,
     ):
         """
+
         :param in_features: input feature dim
-        :param out_features: output feature dim
-        :param in_shape: input shape
-        :param out_shape: output shape
-        :param bias: whether to include bias
-        :param reduction: reduction method
-        :param n_fc_layers: number of fully connected layers
-        :param num_heads: number of attention heads
-        :param set_layer: set layer type
-        :param is_output_layer: indicates that the bias is that of the last layer
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        :param num_heads:
+        :param set_layer:
+        :param is_output_layer: indicates that the bias is that of the last layer.
         """
         super().__init__(
             in_features,
@@ -49,19 +48,36 @@ class SelfToSelfLayer(BaseLayer):
         )
         self.is_output_layer = is_output_layer
         if is_output_layer:
+            # i=L-1
             assert in_shape == out_shape
-            self.layer = self._get_mlp(in_features=in_shape[0] * in_features, out_features=in_shape[0] * out_features, bias=bias)
+            self.layer = self._get_mlp(
+                in_features=in_shape[0] * in_features,
+                out_features=in_shape[0] * out_features,
+                bias=bias,
+            )
         else:
-            self.layer = GeneralSetLayer(in_features=in_features, out_features=out_features, reduction=reduction, bias=bias, n_fc_layers=n_fc_layers, num_heads=num_heads, set_layer=set_layer)
+            self.layer = GeneralSetLayer(
+                in_features=in_features,
+                out_features=out_features,
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
+            )
 
     def forward(self, x):
-        batch_size = x.shape[0]
+        # (bs, d{i+1}, in_features)
         if self.is_output_layer:
+            # (bs, d{i+1} * out_features)
             x = self.layer(x.flatten(start_dim=1))
-            x = x.reshape(batch_size, self.out_shape[0], self.out_features)
+            # (bs, d{i+1}, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
         else:
+            # (bs, d{i+1}, out_features)
             x = self.layer(x)
         return x
+
 
 class SelfToOtherLayer(BaseLayer):
     """Mapping bi -> bj"""
