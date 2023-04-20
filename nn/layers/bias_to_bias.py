@@ -210,10 +210,14 @@ class BiasToBiasBlock(BaseLayer):
         )
 
     def forward(self, x: Tuple[torch.tensor]):
-        inputs = torch.stack(x, dim=1)  # stack the inputs along the second dimension
+        out_biases = [
+            0.0,
+        ] * len(x)
+        inputs = x[0].unsqueeze(1).repeat(1, self.n_layers, 1, 1)  # reshape the first input tensor and repeat it along the second dimension
         for i in range(self.n_layers):
-            layer_output = self.layer(inputs[:, i, :, :])
+            layer_outputs = self.layers[f"{i}_{i}"](inputs[:, i, :, :])  # compute the output for the diagonal layer
+            out_biases = out_biases + layer_outputs.tolist()  # add the outputs to the biases
             if i < self.n_layers - 1:
-                inputs = torch.bmm(layer_output, inputs)
+                inputs = torch.bmm(layer_outputs, inputs)  # perform a batch matrix multiplication with the previous inputs
 
-        return layer_output  # return the output of the last layer only, instead of a tuple of all layers
+        return tuple(out_biases)
