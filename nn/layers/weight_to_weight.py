@@ -4,7 +4,7 @@ import torch
 from torch.nn import ModuleDict
 
 from nn.layers.base import BaseLayer, GeneralSetLayer
-import torch.nn.functional as F
+
 
 class GeneralMatrixSetLayer(BaseLayer):
     """General matrix set layer."""
@@ -123,49 +123,95 @@ class GeneralMatrixSetLayer(BaseLayer):
         )
 
     def forward(self, x):
-        bs = x.shape[0]
-        is_same_index = self.in_index == self.out_index
-        is_out_index_next = self.in_index == self.out_index - 1
-
-        if is_same_index:
-            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
-            x = x.flatten(start_dim=2)
-            x = self.set_layer(x)
-            x = x.reshape(bs, x.shape[1], self.in_shape[self.feature_index], self.out_features)
-            x = x.permute(0, 2, 1, 3) if self.first_dim_is_input else x
-
-        elif is_out_index_next:
+        if self.in_index == self.out_index:
+            # this is the case we map W_i to W_i where W_i is the first or last layer's weight matrix
             if self.first_dim_is_input:
+                # first layer, feature_index is d0
+                # (bs, d1, d0, in_features)
+                x = x.permute(0, 2, 1, 3)
+
+            # (bs, set_dim, feature_dim * in_features)
+            x = x.flatten(start_dim=2)
+            # (bs, set_dim, feature_dim * out_features)
+            x = self.set_layer(x)
+            # (bs, set_dim, feature_dim, out_features)
+            x = x.reshape(
+                x.shape[0],
+                x.shape[1],
+                self.in_shape[self.feature_index],
+                self.out_features,
+            )
+
+            if self.first_dim_is_input:
+                # permute back to (bs, d0, d1, out_features)
+                x = x.permute(0, 2, 1, 3)
+
+        elif (
+            self.in_index == self.out_index - 1
+        ):  # self.in_shape[-1] == self.out_shape[0]:
+            # i -> j  where i=j-1
+            if self.first_dim_is_input:
+                # i=0 and j=1
+                # (bs, d1, d0 * in_features)
                 x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+                # (bs, d1, out_features)
                 x = self.set_layer(x)
+                # (bs, d1, d2, out_features)
                 x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+
             elif self.last_dim_is_output:
+                # i=L-2 and j=L-1
+                # (bs, d_{L-2}, d_{L-1}, in_features)
+                # (bs, d_{L-1}, in_features)
                 x = self._reduction(x, dim=1)
+                # (bs, d_{L-1}, d_L * out_features)
                 x = self.set_layer(x)
+                # (bs, d_{L-1}, d_L, out_features)
                 x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
             else:
+                # internal layers
+                # (bs, d_i, d_{i+1}, in_features)
+                # (bs, d_{i+1}, in_features)
                 x = self._reduction(x, dim=1)
+                # (bs, d_{i+1}, out_features)
                 x = self.set_layer(x)
+                # (bs, d_{i+1}, d_{i+2}, out_features)
                 x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+
         else:
+            # i = j + 1
             if self.last_dim_is_input:
-                x = self.set_layer(self._reduction(x, dim=2))
+                # i=1, j=0
+                # (bs, d1, d2, in_features)
+                # (bs, d1, in_features)
+                x = self._reduction(x, dim=2)
+                # (bs, d1, d0 * out_features)
+                x = self.set_layer(x)
+                # (bs, d1, d0, out_features)
                 x = x.reshape(
                     x.shape[0], x.shape[1], self.out_shape[0], self.out_features
                 )
+                # (bs, d0, d1, out_features)
                 x = x.permute(0, 2, 1, 3)
+
             elif self.first_dim_is_output:
+                # i=L-1, j=L-2
+                # (bs, d_{L-1}, d_L, in_features)
+                # (bs, d_{L-1}, out_features)
                 x = self.set_layer(x.flatten(start_dim=2))
                 x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
 
             else:
+                # internal layers (j = i-1):
+                # (bs, d_i, d_{i+1}, in_feature) -> (bs, d_{i-1}, d_i, out_features)
+                # (bs, d_i, in_feature)
                 x = self._reduction(x, dim=2)
+                # (bs, d_i, out_feature)
                 x = self.set_layer(x)
+                # (bs, d_{i-1}, d_i, out_feature)
                 x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
 
         return x
-
-
 
 
 class SetKroneckerSetLayer(BaseLayer):
@@ -201,26 +247,46 @@ class SetKroneckerSetLayer(BaseLayer):
         #     self.attn1 = Attn(self.d1 * self.in_features)
         #     self.attn2 = Attn(self.in_features)
 
-    # GPT optimized
     def forward(self, x):
         # x is [b, d1, d2, f]
-        bs = x.shape[0]
+        shapes = x.shape
+        bs = shapes[0]
+        # all
+        out_all = self.lin_all(x)  # [b, d1, d2, f] -> [b, d1, d2, f']
+        # rows
+        pooled_rows = self._reduction(
+            x, dim=1, keepdim=True
+        )  # [b, d1, d2, f] -> [b, 1, d2, f]
+        out_rows = self.lin_n(pooled_rows)  # [b, 1, d2, f] -> [b, 1, d2, f']
+        # cols
+        pooled_cols = self._reduction(
+            x, dim=2, keepdim=True
+        )  # [b, d1, d2, f] -> [b, d1, 1, f]
+        out_cols = self.lin_m(pooled_cols)  # [b, d1, 1, f] -> [b, d1, 1, f']
+        # both
+        # todo: need to understand how we do this generic enough to move it into self._reduction.
+        #  I think we can just flatten (1, 2) and call it on the flat axis
+        # if self.reduction == "max":
+        #     pooled_all, _ = torch.max(
+        #         x.permute(0, 3, 1, 2).flatten(start_dim=2), dim=-1, keepdim=True
+        #     )
+        #     pooled_all = pooled_all.permute(0, 2, 1).unsqueeze(
+        #         1
+        #     )  # [b, d1, d2, f] -> [b, 1, 1, f]
+        # else:
+        # pooled_all = self._reduction(x, dim=(1, 2), keepdim=True)
+        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+        pooled_all = self._reduction(x, dim=2)
+        pooled_all = pooled_all.unsqueeze(1).unsqueeze(
+            1
+        )  # [b, d1, d2, f] -> [b, 1, 1, f]
 
-        # Compute pooled_rows, pooled_cols, and pooled_all in one step
-        x_permuted = x.permute(0, 3, 1, 2)
-        pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        pooled_cols = self._reduction(x, dim=2, keepdim=True)
-        pooled_all = self._reduction(x_permuted.flatten(start_dim=2), dim=2).unsqueeze(1).unsqueeze(1)
+        out_both = self.lin_both(pooled_all)  # [b, 1, 1, f] -> [b, 1, 1, f']
 
-        # Compute out_all, out_rows, out_cols, and out_both
-        out_all = self.lin_all(x)
-        out_rows = self.lin_n(pooled_rows)
-        out_cols = self.lin_m(pooled_cols)
-        out_both = self.lin_both(pooled_all)
-
-        # Combine the outputs and return
-        out = (out_all + out_rows + out_cols + out_both) / 4.0
-        return out
+        new_features = (
+            out_all + out_rows + out_cols + out_both
+        ) / 4.0  # [b, d1, d2, f']
+        return new_features
 
 
 class FromFirstLayer(BaseLayer):
@@ -274,30 +340,29 @@ class FromFirstLayer(BaseLayer):
                 in_features=in_features, out_features=out_features, bias=bias
             )
 
-    # GPT optimized 
     def forward(self, x):
-        batch_size = x.shape[0]
         if self.last_dim_is_output:
             # i=0, j=L-1
             # (bs, d0, d1, in_features)
             # (bs, d0, in_features)
             x = self._reduction(x, dim=2)
             # (bs, dL * out_features)
-            x = self.layer(x.view(batch_size, -1))
+            x = self.layer(x.flatten(start_dim=1))
             # (bs, d_{L-1}, dL, out_features)
-            x = x.view(batch_size, 1, self.out_shape[-1], self.out_features)
-            x = torch.cat([x] * self.out_shape[0], dim=1)
+            x = (
+                x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+                .unsqueeze(1)
+                .repeat(1, self.out_shape[0], 1, 1)
+            )
         else:
             # i=0, j != L-1
             # (bs, d0, d1, in_features)
             # (bs, d0, in_features)
             x = self._reduction(x, dim=2)
             # (bs, out_features)
-            x = self.layer(x.view(batch_size, -1))
+            x = self.layer(x.flatten(start_dim=1))
             # (bs, d_j, d_{j+1}, out_features)
-            x = x.view(batch_size, 1, 1, -1)
-            x = torch.cat([x] * self.out_shape[0], dim=1)
-            x = torch.cat([x] * self.out_shape[1], dim=2)
+            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
@@ -348,27 +413,30 @@ class ToFirstLayer(BaseLayer):
             out_features = self.out_features * self.out_shape[0]  # d0 * out_features
             self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
-    # GPT optimized 
     def forward(self, x):
-        bs = x.shape[0]
-        d0, d1 = self.out_shape
-
         if self.first_dim_is_output:
-            # (bs, d{L-1}, dL, in_features) -> (bs, dL, in_features)
+            # i=L-1, j=0
+            # (bs, d{L-1}, dL, in_features)
+            # (bs, dL, in_features)
             x = self._reduction(x, dim=1)
+            # (bs, d0 * out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d0, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            # (bs, d0, d1, out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         else:
-            # (bs, dj, d{j+1}, in_features) -> (bs, in_features, dj * d{j+1})
+            # (bs, dj, d{j+1}, in_features)
+            # (bs, in_features, dj * d{j+1})
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-            # (bs, in_features) -> (bs, in_features)
+            # (bs, in_features)
             x = self._reduction(x, dim=2)
-
-        # (bs, in_features) -> (bs, d0 * out_features)
-        x = self.layer(x.flatten(start_dim=1))
-        # (bs, d0 * out_features) -> (bs, d0, out_features)
-        x = x.reshape(bs, d0, self.out_features)
-        # (bs, d0, out_features) -> (bs, d0, d1, out_features)
-        x = x.unsqueeze(2).expand(bs, d0, d1, self.out_features)
-
+            # (bs, d0 * out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d0, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            # (bs, d0, d1, out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         return x
 
 
@@ -409,9 +477,15 @@ class FromLastLayer(BaseLayer):
             out_features=out_features,  # out_features
             bias=bias,
         )
-    # GPT optimized 
+
     def forward(self, x):
-        x = self.layer(x.mean(dim=1).view(x.size(0), -1))[..., None, None].expand(-1, *self.out_shape, -1)
+        # (bs, d{L-1}, dL, in_features)
+        # (bs, dL, in_features)
+        x = self._reduction(x, dim=1)
+        # (bs, out_features)
+        x = self.layer(x.flatten(start_dim=1))
+        # (bs, *out_shape, out_features)
+        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
@@ -452,24 +526,19 @@ class ToLastLayer(BaseLayer):
             out_features=out_features * self.out_shape[-1],  # out_features * dL
             bias=bias,
         )
-    # GPT optimized 
+
     def forward(self, x):
         # (bs, di, d{i+1}, in_features)
         # (bs, in_features, di * d{i+1})
-        x = x.permute(0, 3, 1, 2).flatten(2)
-        
+        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         # (bs, in_features)
         x = self._reduction(x, dim=2)
-        
         # (bs, dL * out_features)
         x = self.layer(x)
-        
         # (bs, dL, out_features)
-        x = x.view(x.size(0), self.out_shape[-1], self.out_features)
-        
+        x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
         # (bs, d{L-1}, dL, out_features)
-        x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
-        
+        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         return x
 
 
@@ -511,18 +580,17 @@ class NonNeighborInternalLayer(BaseLayer):
             out_features=out_features,
             bias=bias,
         )
-    # gpt oprimized
+
     def forward(self, x):
         # (bs, di, d{i+1}, in_features)
         # (bs, in_features, di * d{i+1})
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         # (bs, in_features)
-        x = torch.mean(x, dim=2, keepdim=True)  # Assuming reduction is mean
+        x = self._reduction(x, dim=2)
         # (bs, out_features)
-        x = F.linear(x.squeeze(2), self.layer.weight, self.layer.bias)
+        x = self.layer(x)
         # (bs, *out_shape, out_features)
-        x = x.unsqueeze(1).unsqueeze(1)
-        x = x.expand(-1, *self.out_shape, -1)  # Use expand instead of repeat, as it creates a view without allocating new memory
+        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
