@@ -184,6 +184,7 @@ class BiasToBiasBlock(BaseLayer):
         num_heads: int = 8,
         set_layer: str = "sab",
     ):
+        super().__init__()
         assert all([len(shape) == 1 for shape in shapes])
 
         self.shapes = shapes
