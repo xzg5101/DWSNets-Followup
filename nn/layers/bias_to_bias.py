@@ -232,11 +232,13 @@ class BiasToBiasBlock(BaseLayer):
         out_biases = [
             0.0,
         ] * len(x)
-        inputs = x[0].unsqueeze(1).repeat(1, self.n_layers, 1, 1)  # reshape the first input tensor and repeat it along the second dimension
         for i in range(self.n_layers):
-            layer_outputs = self.layers[i][i](inputs[:, i, :, :])  # compute the output for the diagonal layer
-            out_biases = out_biases + layer_outputs.tolist()  # add the outputs to the biases
-            if i < self.n_layers - 1:
-                inputs = torch.bmm(layer_outputs, inputs)  # perform a batch matrix multiplication with the previous inputs
-
+            layer_outputs = []
+            for j in range(self.n_layers):
+                layer_output = self.layers[f"{i}_{j}"](x[i])
+                if i == j:
+                    layer_output = layer_output.unsqueeze(1)
+                layer_outputs.append(layer_output)
+            out_biases[i] = torch.sum(torch.cat(layer_outputs, dim=1), dim=1)
+            
         return tuple(out_biases)
