@@ -70,14 +70,14 @@ class MAB(nn.Module):
         super(MAB, self).__init__()
         self.dim_V = dim_V
         self.num_heads = num_heads
-        self.fc_q = nn.Linear(dim_Q, dim_V)
-        self.fc_k = nn.Linear(dim_K, dim_V)
-        self.fc_v = nn.Linear(dim_K, dim_V)
-        self.attention = nn.MultiheadAttention(dim_V, num_heads)
+        self.fc_q = nn.Linear(dim_Q * num_heads, dim_V * num_heads)
+        self.fc_k = nn.Linear(dim_K * num_heads, dim_V * num_heads)
+        self.fc_v = nn.Linear(dim_K * num_heads, dim_V * num_heads)
+        self.attention = nn.MultiheadAttention(dim_V * num_heads, num_heads)
         if ln:
-            self.ln0 = nn.LayerNorm(dim_V)
-            self.ln1 = nn.LayerNorm(dim_V)
-        self.fc_o = nn.Linear(dim_V, dim_V)
+            self.ln0 = nn.LayerNorm(dim_V * num_heads)
+            self.ln1 = nn.LayerNorm(dim_V * num_heads)
+        self.fc_o = nn.Linear(dim_V * num_heads, dim_V * num_heads)
 
     def forward(self, Q, K):
         Q = Q.view(Q.size(0), -1)
