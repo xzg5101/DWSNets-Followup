@@ -110,7 +110,6 @@ class SAB(BaseLayer):
         """
         super().__init__(in_features, out_features)
         self.mab = MAB(in_features, in_features, out_features, num_heads, ln=ln)
-        self._cache = {}
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -122,10 +121,7 @@ class SAB(BaseLayer):
         Returns:
             torch.Tensor: The output tensor.
         """
-        x_id = id(X)
-        if x_id not in self._cache:
-            self._cache[x_id] = self.mab(X, X)
-        return self._cache[x_id]
+        return self.mab(X, X)
 
 class SetLayer(BaseLayer):
     """
