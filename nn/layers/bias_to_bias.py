@@ -205,7 +205,7 @@ class BiasToBiasBlock(BaseLayer):
             reduction=reduction,
             bias=bias,
             n_fc_layers=n_fc_layers,
-            first_dim_is_output=True,
+            first_dim_is_output=False,  # set first_dim_is_output to False
             last_dim_is_output=True,
         )
 
@@ -215,3 +215,5 @@ class BiasToBiasBlock(BaseLayer):
             layer_output = self.layer(inputs[:, i, :, :])
             if i < self.n_layers - 1:
                 inputs = torch.bmm(layer_output, inputs)
+
+        return layer_output  # return the output of the last layer only, instead of a tuple of all layers
