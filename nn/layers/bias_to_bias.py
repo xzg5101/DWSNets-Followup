@@ -184,61 +184,51 @@ class BiasToBiasBlock(BaseLayer):
         num_heads: int = 8,
         set_layer: str = "sab",
     ):
-        super().__init__(
-            in_features=in_features,
-            out_features=out_features,
-            bias=bias,
-            reduction=reduction,
-            n_fc_layers=n_fc_layers,
-            num_heads=num_heads,
-            set_layer=set_layer,
-        )
         assert all([len(shape) == 1 for shape in shapes])
 
         self.shapes = shapes
         self.n_layers = len(shapes)
 
-        # Define the layers attribute here
-        self.layers = nn.ModuleList([
-            nn.ModuleList([
-                SelfToSelfLayer(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=shapes[i],
-                    out_shape=shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    num_heads=num_heads,
-                    set_layer=set_layer,
-                    n_fc_layers=n_fc_layers,
-                    is_output_layer=(j == self.n_layers - 1),
-                ) if i == j else SelfToOtherLayer(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=shapes[i],
-                    out_shape=shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    n_fc_layers=n_fc_layers,
-                    first_dim_is_output=(i == self.n_layers - 1),
-                    last_dim_is_output=(j == self.n_layers - 1),
-                )
-                for j in range(self.n_layers)
-            ])
-            for i in range(self.n_layers)
-        ])
+        self.layers = ModuleDict()
+        # construct layers:
+        for i in range(self.n_layers):
+            is_i_output = i == self.n_layers - 1
+            for j in range(self.n_layers):
+                layer_name = f"{i}_{j}"
+                is_j_output = j == self.n_layers - 1
+
+                if i == j:
+                    self.layers[layer_name] = SelfToSelfLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        num_heads=num_heads,
+                        set_layer=set_layer,
+                        n_fc_layers=n_fc_layers,
+                        is_output_layer=is_j_output,
+                    )
+                else:
+                    self.layers[layer_name] = SelfToOtherLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                        first_dim_is_output=is_i_output,
+                        last_dim_is_output=is_j_output,
+                    )
 
     def forward(self, x: Tuple[torch.tensor]):
-        out_biases = [
-            0.0,
-        ] * len(x)
-        for i in range(self.n_layers):
-            layer_outputs = []
-            for j in range(self.n_layers):
-                layer_output = self.layers[f"{i}_{j}"](x[i])
-                if i == j:
-                    layer_output = layer_output.unsqueeze(1)
-                layer_outputs.append(layer_output)
-            out_biases[i] = torch.sum(torch.cat(layer_outputs, dim=1), dim=1)
-            
+        out_biases = [0.0] * len(x)
+        
+        for idx in range(self.n_layers * self.n_layers):
+            i, j = divmod(idx, self.n_layers)
+            layer_name = f"{i}_{j}"
+            out_biases[j] += self.layers[layer_name](x[i])
+
         return tuple(out_biases)
