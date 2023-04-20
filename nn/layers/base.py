@@ -20,14 +20,16 @@ class BaseLayer(nn.Module):
         set_layer: str = "ds",
     ):
         super().__init__()
-        assert set_layer in ["ds", "sab"]
+        if set_layer not in ["ds", "sab"]:
+            raise ValueError(f"invalid set_layer, got {set_layer}")
 
         self.in_features = in_features
         self.out_features = out_features
         self.in_shape = in_shape
         self.out_shape = out_shape
         self.bias = bias
-        assert reduction in ["mean", "sum", "attn", "max"]
+        if reduction not in ["mean", "sum", "attn", "max"]:
+            raise ValueError(f"invalid reduction, got {reduction}")
         self.reduction = reduction
         self.b = None
         self.n_fc_layers = n_fc_layers
@@ -49,18 +51,18 @@ class BaseLayer(nn.Module):
             b.uniform_(-1e-2, 1e-2)
             self.b = nn.Parameter(b)
 
-    def _reduction(self, x: torch.tensor, dim=1, keepdim=False):
-        if self.reduction == "mean":
-            x = x.mean(dim=dim, keepdim=keepdim)
-        elif self.reduction == "sum":
-            x = x.sum(dim=dim, keepdim=keepdim)
-        elif self.reduction == "attn":
-            assert x.ndim == 3
+    def _reduction(self, x: torch.Tensor, dim=1, keepdim=False):
+        reduction_functions = {
+            "mean": x.mean,
+            "sum": x.sum,
+            "max": x.max,
+        }
+        if self.reduction not in reduction_functions:
             raise NotImplementedError
-        elif self.reduction == "max":
-            x, _ = torch.max(x, dim=dim, keepdim=keepdim)
+        if self.reduction == "max":
+            x, _ = reduction_functions[self.reduction](dim=dim, keepdim=keepdim)
         else:
-            raise ValueError(f"invalid reduction, got {self.reduction}")
+            x = reduction_functions[self.reduction](dim=dim, keepdim=keepdim)
         return x
 
 
