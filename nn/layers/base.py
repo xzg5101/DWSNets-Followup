@@ -66,10 +66,11 @@ class BaseLayer(nn.Module):
 
 
 class MAB(nn.Module):
-    def __init__(self, dim_Q, dim_K, dim_V, num_heads, ln=False):
+    def __init__(self, dim_Q, dim_K, dim_V, num_heads, batch_size, ln=False):
         super(MAB, self).__init__()
         self.dim_V = dim_V
         self.num_heads = num_heads
+        self.batch_size = batch_size
         self.fc_q = nn.Linear(dim_Q, dim_V * num_heads)
         self.fc_k = nn.Linear(dim_K, dim_V * num_heads)
         self.fc_v = nn.Linear(dim_K, dim_V * num_heads)
@@ -88,9 +89,9 @@ class MAB(nn.Module):
         Q = self.fc_q(Q)
         K, V = self.fc_k(K), self.fc_v(K)
 
-        Q = Q.permute(1, 0, 2)
-        K = K.permute(1, 0, 2)
-        V = V.permute(1, 0, 2)
+        Q = Q.view(self.batch_size, -1, self.dim_V * self.num_heads).permute(1, 0, 2)
+        K = K.view(self.batch_size, -1, self.dim_V * self.num_heads).permute(1, 0, 2)
+        V = V.view(self.batch_size, -1, self.dim_V * self.num_heads).permute(1, 0, 2)
 
         O, _ = self.multihead_attn(Q, K, V)
         O = O.permute(1, 0, 2)
