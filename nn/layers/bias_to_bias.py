@@ -123,20 +123,22 @@ class SelfToOtherLayer(BaseLayer):
             )
         else:
             self.layer = self._get_mlp(
-                in_features=in_features,
-                out_features=out_features,
-                bias=bias,
+                in_features=in_features, out_features=out_features, bias=bias
             )
 
     def forward(self, x):
-        x = self._reduction(x, dim=1) if not self.first_dim_is_output else x.flatten(start_dim=1)
-        x = self.layer(x)
-
-        if not self.last_dim_is_output:
+        if self.first_dim_is_output:
+            x = x.view(x.shape[0], -1)
+            x = self.layer(x)
             x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1)
-
-        if self.last_dim_is_output:
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+        elif self.last_dim_is_output:
+            x = self._reduction(x, dim=1)
+            x = self.layer(x)
+            x = x.view(x.shape[0], self.out_shape[0], self.out_features)
+        else:
+            x = self._reduction(x, dim=1)
+            x = self.layer(x)
+            x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1)
 
         return x
 
