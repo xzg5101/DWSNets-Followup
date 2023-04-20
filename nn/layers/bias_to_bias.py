@@ -172,6 +172,7 @@ class SelfToOtherLayer(BaseLayer):
         return x
 
 from typing import List
+from torch import Tensor
 class BiasToBiasBlock(BaseLayer):
     def __init__(
         self,
