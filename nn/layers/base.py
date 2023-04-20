@@ -62,14 +62,14 @@ class BaseLayer(nn.Module):
             self.b = nn.Parameter(b)
 
     def _reduction(self, x: torch.tensor, dim: int = 1, keepdim: bool = False) -> torch.tensor:
-        if self.reduction == Reduction.MEAN:
+        if self.reduction == Reduction.MEAN.value:
             x = x.mean(dim=dim, keepdim=keepdim)
-        elif self.reduction == Reduction.SUM:
+        elif self.reduction == Reduction.SUM.value:
             x = x.sum(dim=dim, keepdim=keepdim)
-        elif self.reduction == Reduction.ATTN:
+        elif self.reduction == Reduction.ATTN.value:
             assert x.ndim == 3
             raise NotImplementedError
-        elif self.reduction == Reduction.MAX:
+        elif self.reduction == Reduction.MAX.value:
             x, _ = torch.max(x, dim=dim, keepdim=keepdim)
         else:
             raise ValueError(f"invalid reduction, got {self.reduction}")
