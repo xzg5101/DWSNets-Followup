@@ -171,7 +171,7 @@ class SelfToOtherLayer(BaseLayer):
 
         return x
 
-
+from typing import List
 class BiasToBiasBlock(BaseLayer):
     def __init__(
         self,
