@@ -171,15 +171,12 @@ class SelfToOtherLayer(BaseLayer):
 
         return x
 
-import torch.nn as nn
-from typing import List
-from torch import Tensor
 class BiasToBiasBlock(BaseLayer):
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        shapes: List[Tensor],
+        in_features,
+        out_features,
+        shapes,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -195,48 +192,26 @@ class BiasToBiasBlock(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-        # shapes must be a list of 1D tensors
+        assert all([len(shape) == 1 for shape in shapes])
+
         self.shapes = shapes
         self.n_layers = len(shapes)
 
-        self.layers = nn.ModuleList()
-        # construct layers:
-        for i, j in zip(range(self.n_layers), range(self.n_layers)):
-            if i == j:
-                self.layers.append(SelfToSelfLayer(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=shapes[i],
-                    out_shape=shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    num_heads=num_heads,
-                    set_layer=set_layer,
-                    n_fc_layers=n_fc_layers,
-                    is_output_layer=(
-                        j == self.n_layers - 1
-                    ),
-                ))
-            else:
-                self.layers.append(SelfToOtherLayer(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=shapes[i],
-                    out_shape=shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    n_fc_layers=n_fc_layers,
-                    first_dim_is_output=(
-                        i == self.n_layers - 1
-                    ),
-                    last_dim_is_output=(
-                        j == self.n_layers - 1
-                    ),
-                ))
+        self.layer = SelfToOtherLayer(
+            in_features=in_features,
+            out_features=out_features,
+            in_shape=shapes[-1],
+            out_shape=shapes[-1],
+            reduction=reduction,
+            bias=bias,
+            n_fc_layers=n_fc_layers,
+            first_dim_is_output=True,
+            last_dim_is_output=True,
+        )
 
-    def forward(self, x: Tuple[Tensor]) -> Tuple[Tensor]:
-        out_biases = torch.zeros(len(x))
-        for i, j in zip(range(self.n_layers), range(self.n_layers)):
-            out_biases += self.layers[i * self.n_layers + j](x[i])
-
-        return tuple(out_biases)
+    def forward(self, x: Tuple[torch.tensor]):
+        inputs = torch.stack(x, dim=1)  # stack the inputs along the second dimension
+        for i in range(self.n_layers):
+            layer_output = self.layer(inputs[:, i, :, :])
+            if i < self.n_layers - 1:
+                inputs = torch.bmm(layer_output, inputs)
