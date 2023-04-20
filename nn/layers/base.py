@@ -191,22 +191,12 @@ class Attn(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
-        self.query = nn.Parameter(
-            torch.ones(
-                dim,
-            )
-        )
+        self.query = nn.Parameter(torch.ones(dim))
 
     def forward(self, x, keepdim=False):
-        # Note: reduction is applied to last dim. For example for (bs, d, d') we compute d' attn weights
-        # by multiplying over d.
         attn = (x.transpose(-1, -2) * self.query).sum(-1)
         attn = F.softmax(attn, dim=-1)
-        # todo: change to attn.unsqueeze(-2) ?
-        if x.ndim == 3:
-            attn = attn.unsqueeze(1)
-        elif x.ndim == 4:
-            attn = attn.unsqueeze(2)
+        attn = attn.unsqueeze(x.ndim - 2)
 
         output = (x * attn).sum(-1, keepdim=keepdim)
 
