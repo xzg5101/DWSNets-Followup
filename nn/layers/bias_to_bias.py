@@ -34,9 +34,9 @@ class SelfToSelfLayer(BaseLayer):
             set_layer=set_layer,
         )
         self.is_output_layer = is_output_layer
-        self.layer = self._initialize_layer(in_shape, in_features, out_features, bias)
+        self.layer = self._initialize_layer(in_shape, in_features, out_features, bias, set_layer)
 
-    def _initialize_layer(self, in_shape, in_features, out_features, bias):
+    def _initialize_layer(self, in_shape, in_features, out_features, bias, set_layer):
         if self.is_output_layer:
             assert in_shape == out_shape
             return self._get_mlp(
@@ -51,7 +51,7 @@ class SelfToSelfLayer(BaseLayer):
             bias=self.bias,
             n_fc_layers=self.n_fc_layers,
             num_heads=self.num_heads,
-            set_layer=self.set_layer,
+            set_layer=set_layer,
         )
 
     def _process_output_layer(self, x):
@@ -60,7 +60,6 @@ class SelfToSelfLayer(BaseLayer):
 
     def forward(self, x):
         return self._process_output_layer(x) if self.is_output_layer else self.layer(x)
-
 class SelfToOtherLayer(BaseLayer):
     """Mapping bi -> bj"""
 
