@@ -175,9 +175,9 @@ class SelfToOtherLayer(BaseLayer):
 class BiasToBiasBlock(BaseLayer):
     def __init__(
         self,
-        in_features,
-        out_features,
-        shapes,
+        in_features: int,
+        out_features: int,
+        shapes: List[Tensor],
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -193,53 +193,48 @@ class BiasToBiasBlock(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-        assert all([len(shape) == 1 for shape in shapes])
-
+        # shapes must be a list of 1D tensors
         self.shapes = shapes
         self.n_layers = len(shapes)
 
-        self.layers = ModuleDict()
+        self.layers = nn.ModuleList()
         # construct layers:
-        for i in range(self.n_layers):
-            for j in range(self.n_layers):
-                if i == j:
-                    self.layers[f"{i}_{j}"] = SelfToSelfLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=shapes[i],
-                        out_shape=shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        num_heads=num_heads,
-                        set_layer=set_layer,
-                        n_fc_layers=n_fc_layers,
-                        is_output_layer=(
-                            j == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
-                else:
-                    self.layers[f"{i}_{j}"] = SelfToOtherLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=shapes[i],
-                        out_shape=shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        n_fc_layers=n_fc_layers,
-                        first_dim_is_output=(
-                            i == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                        last_dim_is_output=(
-                            j == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
+        for i, j in zip(range(self.n_layers), range(self.n_layers)):
+            if i == j:
+                self.layers.append(SelfToSelfLayer(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=shapes[i],
+                    out_shape=shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    num_heads=num_heads,
+                    set_layer=set_layer,
+                    n_fc_layers=n_fc_layers,
+                    is_output_layer=(
+                        j == self.n_layers - 1
+                    ),
+                ))
+            else:
+                self.layers.append(SelfToOtherLayer(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=shapes[i],
+                    out_shape=shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    n_fc_layers=n_fc_layers,
+                    first_dim_is_output=(
+                        i == self.n_layers - 1
+                    ),
+                    last_dim_is_output=(
+                        j == self.n_layers - 1
+                    ),
+                ))
 
-    def forward(self, x: Tuple[torch.tensor]):
-        out_biases = [
-            0.0,
-        ] * len(x)
-        for i in range(self.n_layers):
-            for j in range(self.n_layers):
-                out_biases[j] = out_biases[j] + self.layers[f"{i}_{j}"](x[i])
+    def forward(self, x: Tuple[Tensor]) -> Tuple[Tensor]:
+        out_biases = torch.zeros(len(x))
+        for i, j in zip(range(self.n_layers), range(self.n_layers)):
+            out_biases += self.layers[i * self.n_layers + j](x[i])
 
         return tuple(out_biases)
