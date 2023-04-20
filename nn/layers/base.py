@@ -97,6 +97,7 @@ class MAB(nn.Module):
         O = O if getattr(self, "ln1", None) is None else self.ln1(O)
         return O
 
+from torch import Tensor
 class SAB(nn.Module):
     def __init__(
         self,
