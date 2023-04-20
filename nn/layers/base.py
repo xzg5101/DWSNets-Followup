@@ -187,6 +187,7 @@ class GeneralSetLayer(BaseLayer):
         return self.set_layer(x)
 
 
+
 class Attn(nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -194,9 +195,12 @@ class Attn(nn.Module):
         self.query = nn.Parameter(torch.ones(dim))
 
     def forward(self, x, keepdim=False):
-        attn = (x.transpose(-1, -2) * self.query).sum(-1)
-        attn = F.softmax(attn, dim=-1)
-        attn = attn.unsqueeze(x.ndim - 2)
+        # Note: reduction is applied to last dim. For example for (bs, d, d') we compute d' attn weights
+        # by multiplying over d.
+        attn = (x.transpose(-1, -2) @ self.query).softmax(-1)
+        
+        unsqueeze_dim = 1 if x.ndim == 3 else 2
+        attn = attn.unsqueeze(unsqueeze_dim)
 
         output = (x * attn).sum(-1, keepdim=keepdim)
 
