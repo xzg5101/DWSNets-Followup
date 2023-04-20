@@ -70,34 +70,31 @@ class MAB(nn.Module):
         super(MAB, self).__init__()
         self.dim_V = dim_V
         self.num_heads = num_heads
-        self.fc_q = nn.Linear(dim_Q * num_heads, dim_V * num_heads)
-        self.fc_k = nn.Linear(dim_K * num_heads, dim_V * num_heads)
-        self.fc_v = nn.Linear(dim_K * num_heads, dim_V * num_heads)
-        self.attention = nn.MultiheadAttention(dim_V * num_heads, num_heads)
+        
+        self.linears = nn.ModuleList([nn.Linear(dim_Q, dim_V),
+                                       nn.Linear(dim_K, dim_V),
+                                       nn.Linear(dim_K, dim_V),
+                                       nn.Linear(dim_V, dim_V)])
+
+        self.multihead_attn = nn.MultiheadAttention(dim_V, num_heads)
+        
         if ln:
-            self.ln0 = nn.LayerNorm(dim_V * num_heads)
-            self.ln1 = nn.LayerNorm(dim_V * num_heads)
-        self.fc_o = nn.Linear(dim_V * num_heads, dim_V * num_heads)
+            self.ln0 = nn.LayerNorm(dim_V)
+            self.ln1 = nn.LayerNorm(dim_V)
+        else:
+            self.ln0 = None
+            self.ln1 = None
 
     def forward(self, Q, K):
-        Q = Q.view(Q.size(0), -1)
-        K = K.view(K.size(0), -1)
+        Q = self.linears[0](Q)
+        K, V = self.linears[1](K), self.linears[2](K)
 
-        Q = self.fc_q(Q)
-        K = self.fc_k(K)
-        V = self.fc_v(K)
+        A, _ = self.multihead_attn(Q, K, V)
 
-        Q = Q.unsqueeze(0)
-        K = K.unsqueeze(0)
-        V = V.unsqueeze(0)
-
-        A, _ = self.attention(Q, K, V)
         O = Q + A
-        O = O.squeeze(0)
-        
-        O = O if getattr(self, "ln0", None) is None else self.ln0(O)
-        O = O + F.relu(self.fc_o(O))
-        O = O if getattr(self, "ln1", None) is None else self.ln1(O)
+        O = O if self.ln0 is None else self.ln0(O)
+        O = O + F.relu(self.linears[3](O))
+        O = O if self.ln1 is None else self.ln1(O)
         return O
 
 
