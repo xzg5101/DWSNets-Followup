@@ -98,29 +98,11 @@ class MAB(nn.Module):
         return O
 
 class SAB(BaseLayer):
-    def __init__(self, in_features: int, out_features: int, num_heads: int = 8, ln: bool = False):
-        """
-        Initializes the SAB (Set Aggregation Block) layer.
-        
-        Args:
-            in_features (int): The number of input features.
-            out_features (int): The number of output features.
-            num_heads (int, optional): The number of attention heads. Defaults to 8.
-            ln (bool, optional): Whether to use layer normalization. Defaults to False.
-        """
+    def __init__(self, in_features, out_features, num_heads=8, ln=False):
         super().__init__(in_features, out_features)
         self.mab = MAB(in_features, in_features, out_features, num_heads, ln=ln)
 
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """
-        Computes the forward pass of the SAB layer.
-        
-        Args:
-            X (torch.Tensor): The input tensor.
-            
-        Returns:
-            torch.Tensor: The output tensor.
-        """
+    def forward(self, X):
         return self.mab(X, X)
 
 class SetLayer(BaseLayer):
@@ -146,19 +128,26 @@ class SetLayer(BaseLayer):
         self.Gamma = self._get_mlp(in_features, out_features, bias=self.bias)
         self.Lambda = self._get_mlp(in_features, out_features, bias=False)
         self.reduction = reduction
+        self.reduction_methods = {
+            "mean": torch.mean,
+            "sum": torch.sum,
+            "max": torch.max,
+        }
+
         if self.reduction == "attn":
             self.attn = Attn(dim=in_features)
+            self.reduction_methods["attn"] = self.attn_reduction
+
+    def attn_reduction(self, x):
+        return self.attn(x.transpose(-1, -2), keepdim=True).transpose(-1, -2)
 
     def forward(self, x):
         # set dim is 1
-        if self.reduction == "mean":
-            xm = x.mean(1, keepdim=True)
-        elif self.reduction == "sum":
-            xm = x.sum(1, keepdim=True)
-        elif self.reduction == "attn":
-            xm = self.attn(x.transpose(-1, -2), keepdim=True).transpose(-1, -2)
+        reduction_func = self.reduction_methods[self.reduction]
+        if self.reduction == "max":
+            xm, _ = reduction_func(x, dim=1, keepdim=True)
         else:
-            xm, _ = torch.max(x, dim=1, keepdim=True)
+            xm = reduction_func(x, dim=1, keepdim=True)
 
         xm = self.Lambda(xm)
         x = self.Gamma(x)
