@@ -80,12 +80,21 @@ class MAB(nn.Module):
         self.fc_o = nn.Linear(dim_V, dim_V)
 
     def forward(self, Q, K):
+        Q = Q.view(Q.size(0), -1)
+        K = K.view(K.size(0), -1)
+
         Q = self.fc_q(Q)
         K = self.fc_k(K)
         V = self.fc_v(K)
 
+        Q = Q.unsqueeze(0)
+        K = K.unsqueeze(0)
+        V = V.unsqueeze(0)
+
         A, _ = self.attention(Q, K, V)
         O = Q + A
+        O = O.squeeze(0)
+        
         O = O if getattr(self, "ln0", None) is None else self.ln0(O)
         O = O + F.relu(self.fc_o(O))
         O = O if getattr(self, "ln1", None) is None else self.ln1(O)
