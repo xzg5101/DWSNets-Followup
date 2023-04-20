@@ -106,6 +106,10 @@ class SAB(BaseLayer):
         return self.mab(X, X)
 
 class SetLayer(BaseLayer):
+    """
+    from https://github.com/manzilzaheer/DeepSets/tree/master/PointClouds
+    """
+
     def __init__(
         self,
         in_features,
@@ -124,26 +128,23 @@ class SetLayer(BaseLayer):
         self.Gamma = self._get_mlp(in_features, out_features, bias=self.bias)
         self.Lambda = self._get_mlp(in_features, out_features, bias=False)
         self.reduction = reduction
-        self._reduction_function = self._get_reduction_function()
-
         if self.reduction == "attn":
             self.attn = Attn(dim=in_features)
 
-    def _get_reduction_function(self):
-        if self.reduction == "mean":
-            return lambda x: x.mean(1, keepdim=True)
-        elif self.reduction == "sum":
-            return lambda x: x.sum(1, keepdim=True)
-        elif self.reduction == "attn":
-            return lambda x: self.attn(x.transpose(-1, -2), keepdim=True).transpose(-1, -2)
-        else:
-            return lambda x: torch.max(x, dim=1, keepdim=True)[0]
-
     def forward(self, x):
-        xm = self._reduction_function(x)
-        xm = self.Lambda(xm)
-        self.Gamma(x, out=x)
-        x.sub_(xm)
+        # set dim is 1
+        if self.reduction == "mean":
+            xm = torch.mean(x, dim=1, keepdim=True)
+        elif self.reduction == "sum":
+            xm = torch.sum(x, dim=1, keepdim=True)
+        elif self.reduction == "attn":
+            xm = self.attn(x.transpose(-1, -2), keepdim=True).transpose(-1, -2)
+        else:
+            xm, _ = torch.max(x, dim=1, keepdim=True)
+
+        xm = F.layer_norm(xm, xm.shape[1:])
+        x = F.linear(x, self.Gamma.weight, self.Gamma.bias)
+        x = x - F.layer_norm(xm, x.shape[1:])
         return x
 
 
