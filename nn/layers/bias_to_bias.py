@@ -50,17 +50,31 @@ class SelfToSelfLayer(BaseLayer):
         self.is_output_layer = is_output_layer
         if is_output_layer:
             assert in_shape == out_shape
-            self.layer = self._get_mlp(in_features=in_shape[0] * in_features, out_features=in_shape[0] * out_features, bias=bias)
+            self.layer = self._get_mlp(
+                in_features=in_shape[0] * in_features,
+                out_features=in_shape[0] * out_features,
+                bias=bias,
+            )
         else:
-            self.layer = GeneralSetLayer(in_features=in_features, out_features=out_features, reduction=reduction, bias=bias, n_fc_layers=n_fc_layers, num_heads=num_heads, set_layer=set_layer)
+            self.layer = GeneralSetLayer(
+                in_features=in_features,
+                out_features=out_features,
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
+            )
 
     def forward(self, x):
-        batch_size = x.shape[0]
+        batch_size = x.size(0)
+
         if self.is_output_layer:
             x = self.layer(x.flatten(start_dim=1))
-            x = x.reshape(batch_size, self.out_shape[0], self.out_features)
+            x = x.view(batch_size, self.out_shape[0], self.out_features)
         else:
             x = self.layer(x)
+        
         return x
 
 class SelfToOtherLayer(BaseLayer):
