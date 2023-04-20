@@ -9,10 +9,10 @@ from torch.nn import functional as F
 class BaseLayer(nn.Module):
     def __init__(
         self,
-        in_features,
-        out_features,
-        in_shape: Optional[Tuple] = None,
-        out_shape: Optional[Tuple] = None,
+        in_features: int,
+        out_features: int,
+        in_shape: Optional[Tuple[int]] = None,
+        out_shape: Optional[Tuple[int]] = None,
         bias: bool = True,
         reduction: str = "mean",
         n_fc_layers: int = 1,
@@ -21,48 +21,54 @@ class BaseLayer(nn.Module):
     ):
         super().__init__()
         if set_layer not in ["ds", "sab"]:
-            raise ValueError(f"invalid set_layer, got {set_layer}")
+            raise ValueError(f"Invalid set_layer value, got {set_layer}")
 
         self.in_features = in_features
         self.out_features = out_features
         self.in_shape = in_shape
         self.out_shape = out_shape
         self.bias = bias
+
         if reduction not in ["mean", "sum", "attn", "max"]:
-            raise ValueError(f"invalid reduction, got {reduction}")
+            raise ValueError(f"Invalid reduction value, got {reduction}")
+
         self.reduction = reduction
         self.b = None
         self.n_fc_layers = n_fc_layers
         self.num_heads = num_heads
 
-    def _get_mlp(self, in_features, out_features, bias=False):
-        layers = [nn.Linear(in_features, out_features, bias=bias)]
-        for _ in range(self.n_fc_layers - 1):
-            layers.extend([nn.ReLU(), nn.Linear(out_features, out_features, bias=bias)])
+    def _get_mlp(self, in_features: int, out_features: int, bias: bool = False) -> nn.Sequential:
+        layers = [nn.Linear(in_features, out_features, bias=bias)] + [
+            layer
+            for _ in range(self.n_fc_layers - 1)
+            for layer in (nn.ReLU(), nn.Linear(out_features, out_features, bias=bias))
+        ]
         return nn.Sequential(*layers)
 
-    def _init_bias(self, row_equal, col_equal, row_dim, col_dim):
+    def _init_bias(self, row_equal: bool, col_equal: bool, row_dim: int, col_dim: int) -> None:
         if self.bias:
             b = torch.empty(
                 1 if row_equal else row_dim,
                 1 if col_equal else col_dim,
                 self.out_features,
             )
-            b.uniform_(-1e-2, 1e-2)
+            nn.init.uniform_(b, -1e-2, 1e-2)
             self.b = nn.Parameter(b)
 
-    def _reduction(self, x: torch.Tensor, dim=1, keepdim=False):
-        reduction_functions = {
-            "mean": x.mean,
-            "sum": x.sum,
-            "max": x.max,
-        }
-        if self.reduction not in reduction_functions:
+    def _reduction(self, x: torch.Tensor, dim: int = 1, keepdim: bool = False) -> torch.Tensor:
+        if self.reduction == "mean":
+            x = x.mean(dim=dim, keepdim=keepdim)
+        elif self.reduction == "sum":
+            x = x.sum(dim=dim, keepdim=keepdim)
+        elif self.reduction == "attn":
+            if x.ndim != 3:
+                raise ValueError("Input tensor must have 3 dimensions for attention reduction")
             raise NotImplementedError
-        if self.reduction == "max":
-            x, _ = reduction_functions[self.reduction](dim=dim, keepdim=keepdim)
+        elif self.reduction == "max":
+            x, _ = torch.max(x, dim=dim, keepdim=keepdim)
         else:
-            x = reduction_functions[self.reduction](dim=dim, keepdim=keepdim)
+            raise ValueError(f"Invalid reduction, got {self.reduction}")
+
         return x
 
 
