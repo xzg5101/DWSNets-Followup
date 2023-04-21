@@ -152,11 +152,8 @@ class DWSLayer(BaseLayer):
         new_biases = self._merge_and_normalize(new_biases_from_biases, new_biases_from_weights)
 
         if self.add_skip:
-            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
-                self.skip(b) for b in x[1]
-            )
-            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
-            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
+            skip_out = tuple(self.skip(w) for w in x[0])
+            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out))
 
         return new_weights, new_biases
 
