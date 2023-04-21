@@ -181,16 +181,6 @@ class NonNeighborInternalLayer(BaseLayer):
         last_dim_is_input=False,
         first_dim_is_output=False,
     ):
-        """
-
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        """
         super().__init__(
             in_features,
             out_features,
@@ -200,82 +190,25 @@ class NonNeighborInternalLayer(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
         )
-        # todo: add assertions to varify boolean conditions are OK
         self.last_dim_is_input = last_dim_is_input
         self.first_dim_is_output = first_dim_is_output
 
-        if self.first_dim_is_output:
-            # i = L-1
-            if self.last_dim_is_input:
-                # i = L-1, j = 0
-                in_features = self.in_features * in_shape[-1]  # in_features * dL
-                out_features = self.out_features * out_shape[0]  # out_features * d0
-
-            else:
-                # i = L-1, j != 0
-                in_features = self.in_features * in_shape[-1]  # in_features * dL
-                out_features = self.out_features  # out_features
-
-        else:
-            # i != L-1
-            if self.last_dim_is_input:
-                # i != L-1, j = 0
-                in_features = self.in_features  # in_features
-                out_features = self.out_features * out_shape[0]  # out_features * d0
-
-            else:
-                # i != L-1, j != 0
-                in_features = self.in_features  # in_features
-                out_features = self.out_features  # out_features
+        in_features *= in_shape[-1] if self.first_dim_is_output else 1
+        out_features *= (out_shape[0] if self.last_dim_is_input else 1) if self.first_dim_is_output or self.last_dim_is_input else 1
 
         self.layer = self._get_mlp(
             in_features=in_features, out_features=out_features, bias=bias
         )
 
     def forward(self, x):
+        x = x.flatten(start_dim=1) if self.first_dim_is_output else self._reduction(x, dim=1)
+        x = self.layer(x)
+
         if self.first_dim_is_output:
-            # i = L-1
-            if self.last_dim_is_input:
-                # i = L-1, j = 0
-                # (bs, dL, in_features)
-                # (bs, dL * in_features)
-                x = x.flatten(start_dim=1)
-                # (bs, d0 * out_features)
-                x = self.layer(x)
-                # (bs, d0, out_features)
-                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-                # (bs, d0, d1, out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-            else:
-                # i = L-1, j = 0
-                # (bs, dL, in_features)
-                # (bs, dL * in_features)
-                x = x.flatten(start_dim=1)
-                # (bs, out_features)
-                x = self.layer(x)
-                # (bs, dj, d{j+1}, out_features)
-                x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         else:
-            if self.last_dim_is_input:
-                # i != L-1, j = 0
-                # (bs, d{i+1}, in_features)
-                # (bs, in_features)
-                x = self._reduction(x, dim=1)
-                # (bs, d0 * out_shape)
-                x = self.layer(x)
-                # (bs, d0, out_shape)
-                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-                # (bs, d0, d1, out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-            else:
-                # i != L-1, j != 0
-                # (bs, d{i+1}, in_features)
-                # (bs, in_features)
-                x = self._reduction(x, dim=1)
-                # (bs, out_shape)
-                x = self.layer(x)
-                # (bs, dj, d{j+1}, out_features)
-                x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
