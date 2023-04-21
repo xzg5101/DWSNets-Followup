@@ -204,15 +204,16 @@ class NonNeighborInternalLayer(BaseLayer):
         )
 
     def forward(self, x):
-        if self.first_dim_is_output or self.last_dim_is_input:
+        if self.first_dim_is_output:
             x = x.flatten(start_dim=1)
             x = self.layer(x)
-            if self.first_dim_is_output:
-                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-            else:
-                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        elif self.last_dim_is_input:
+            x = x.flatten(start_dim=1)
+            x = self.layer(x)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         else:
             x = self._reduction(x, dim=1)
             x = self.layer(x)
