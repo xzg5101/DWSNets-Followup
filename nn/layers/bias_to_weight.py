@@ -326,20 +326,22 @@ class BiasToWeightBlock(BaseLayer):
                     out_shape=weight_shapes[j],
                     reduction=reduction,
                     bias=bias,
-                    num_heads=num_heads,
-                    set_layer=set_layer,
                     n_fc_layers=n_fc_layers,
                 )
 
                 if i == j:
                     self.layers[f"{i}_{j}"] = SameLayer(
                         **layer_kwargs,
+                        num_heads=num_heads,
+                        set_layer=set_layer,
                         is_input_layer=(i == 0),
                         is_output_layer=(j == self.n_layers - 1),
                     )
                 elif i == j - 1:
                     self.layers[f"{i}_{j}"] = SuccessiveLayers(
                         **layer_kwargs,
+                        num_heads=num_heads,
+                        set_layer=set_layer,
                         last_dim_is_output=(j == self.n_layers - 1),
                     )
                 else:
