@@ -176,16 +176,14 @@ class DWSLayer(BaseLayer):
             if isinstance(m, nn.Linear):
                 out_c, in_c = m.weight.shape
                 g = (2 * in_c / out_c) ** 0.5
-                # nn.init.xavier_normal_(m.weight, gain=g)
                 nn.init.xavier_normal_(m.weight)
-                # nn.init.kaiming_normal_(m.weight)
                 off_diag_penalty_ = (
-                    off_diag_penalty if self._apply_off_diag_penalty(n) else 1.0
+                    off_diag_penalty if self._apply_off_diag_penalty(self, n) else 1.0
                 )
                 m.weight.data = m.weight.data * g * scale * off_diag_penalty_
                 if m.bias is not None:
-                    # m.bias.data.fill_(0.0)
                     m.bias.data.uniform_(-1e-4, 1e-4)
+
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
         new_weights_from_weights = self.blocks[0](weights)
