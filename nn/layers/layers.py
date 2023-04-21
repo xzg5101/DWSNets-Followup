@@ -12,32 +12,34 @@ from nn.layers.weight_to_weight import WeightToWeightBlock
 
 
 class BN(nn.Module):
-    def __init__(self, num_features, n_weights, n_biases):
+    def __init__(self, n_weights, n_biases):
         super().__init__()
-        self.weights_bn = nn.ModuleList(
-            nn.BatchNorm1d(num_features) for _ in range(n_weights)
-        )
-        self.biases_bn = nn.ModuleList(
-            nn.BatchNorm1d(num_features) for _ in range(n_biases)
-        )
+        self.weights_bn = nn.ModuleList()
+        self.biases_bn = nn.ModuleList()
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
         new_weights, new_biases = [None] * len(weights), [None] * len(biases)
 
-        device = self.weights_bn[0].weight.device
+        for i, w in enumerate(weights):
+            num_features = w.shape[-1]
+            if i >= len(self.weights_bn):
+                self.weights_bn.append(nn.BatchNorm1d(num_features).to(w.device))
 
-        for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
             shapes = w.shape
-            w = w.to(device)
+            m = self.weights_bn[i]
             new_weights[i] = (
                 m(w.permute(0, 3, 1, 2).contiguous().view(-1, *shapes[2:]))
                 .view(-1, *shapes[1:])
                 .reshape(*shapes)
             )
 
-        for i, (m, b) in enumerate(zip(self.biases_bn, biases)):
-            b = b.to(device)
+        for i, b in enumerate(biases):
+            num_features = b.shape[-1]
+            if i >= len(self.biases_bn):
+                self.biases_bn.append(nn.BatchNorm1d(num_features).to(b.device))
+
+            m = self.biases_bn[i]
             new_biases[i] = m(b.permute(0, 2, 1)).permute(0, 2, 1)
 
         return tuple(new_weights), tuple(new_biases)
