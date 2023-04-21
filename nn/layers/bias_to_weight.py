@@ -120,10 +120,12 @@ class SuccessiveLayers(BaseLayer):
             set_layer=set_layer,
         )
         self.last_dim_is_output = last_dim_is_output
+
         if self.last_dim_is_output:
-            out_features = self.out_features * out_shape[1]
+            out_features *= out_shape[1]
+
         self.layer = GeneralSetLayer(
-            in_features=self.in_features,
+            in_features=in_features,
             out_features=out_features,
             reduction=reduction,
             bias=bias,
@@ -134,10 +136,12 @@ class SuccessiveLayers(BaseLayer):
 
     def forward(self, x):
         x = self.layer(x)
+
         if self.last_dim_is_output:
             x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
         else:
             x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            
         return x
 
 class NonNeighborInternalLayer(BaseLayer):
