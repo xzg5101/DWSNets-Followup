@@ -71,12 +71,6 @@ class Dropout(nn.Module):
 class DWSLayer(BaseLayer):
     def __init__(
         self,
-        # ...
-    ):
-        # ...
-        class DWSLayer(BaseLayer):
-    def __init__(
-        self,
         weight_shapes: Tuple[Tuple[int, int], ...],
         bias_shapes: Tuple[
             Tuple[int,],
