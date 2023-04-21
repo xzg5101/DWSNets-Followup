@@ -57,15 +57,17 @@ class LeakyReLU(nn.Module):
 
 
 class Dropout(nn.Module):
-    def __init__(self, p=0.1):
+    def __init__(self, p: float = 0.1):
         super().__init__()
         self.p = p
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
         weights, biases = x
-        dropout_fn = lambda t: F.dropout(t, p=self.p, training=self.training)
-        return tuple(map(dropout_fn, weights)), tuple(map(dropout_fn, biases))
-
+        dropped_weights = tuple(F.dropout(w, p=self.p) for w in weights)
+        dropped_biases = tuple(F.dropout(b, p=self.p) for b in biases)
+        
+        return dropped_weights, dropped_biases
+    
 class DWSLayer(BaseLayer):
     def __init__(
         self,
