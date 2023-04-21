@@ -108,6 +108,18 @@ class SuccessiveLayers(BaseLayer):
         set_layer: str = "sab",
         last_dim_is_output=False,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        :param num_heads:
+        :param set_layer:
+        """
         super().__init__(
             in_features,
             out_features,
@@ -120,13 +132,18 @@ class SuccessiveLayers(BaseLayer):
             set_layer=set_layer,
         )
         self.last_dim_is_output = last_dim_is_output
-
         if self.last_dim_is_output:
-            out_features *= out_shape[1]
+            in_features = self.in_features
+            out_features = self.out_features * out_shape[1]  # dL * out_features
+            # j=L-1, i=L-2, bi is of shape d{L-1}, Wj is of shape (d{L-1}, dL)
+        else:
+            # j!=L-1, bi is of shape d{i+1}, Wj is of shape (d{i+1}, d{i+2})
+            in_features = self.in_features
+            out_features = self.out_features  # out_features
 
         self.layer = GeneralSetLayer(
             in_features=in_features,
-            out_features=out_features,
+            out_features=out_features,  # dL * out_features
             reduction=reduction,
             bias=bias,
             n_fc_layers=n_fc_layers,
@@ -135,13 +152,18 @@ class SuccessiveLayers(BaseLayer):
         )
 
     def forward(self, x):
-        x = self.layer(x)
-
         if self.last_dim_is_output:
+            # (bs, d{L-1}, in_features)
+            # (bs, d{L-1}, dL * out_features)
+            x = self.layer(x)
+            # (bs, d{L-1}, dL * out_features)
             x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
         else:
+            # (bs, d{i+1}, in_features)
+            # (bs, d{i+1}, out_features)
+            x = self.layer(x)
+            # (bs, d{i+1}, d{i+2} out_features)
             x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-            
         return x
 
 class NonNeighborInternalLayer(BaseLayer):
