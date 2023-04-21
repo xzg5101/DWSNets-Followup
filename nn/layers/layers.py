@@ -128,6 +128,18 @@ class DWSLayer(BaseLayer):
                     )
                     torch.nn.init.constant_(m.bias, 0.0)
 
+    def _init_model_params(self, scale, off_diag_penalty=1.0):
+        for n, m in self.named_modules():
+            if isinstance(m, nn.Linear):
+                out_c, in_c = m.weight.shape
+                g = (2 * in_c / out_c) ** 0.5
+                nn.init.xavier_normal_(m.weight)
+                off_diag_penalty_ = (
+                    off_diag_penalty if self._apply_off_diag_penalty(n) else 1.0
+                )
+                m.weight.data = m.weight.data * g * scale * off_diag_penalty_
+                if m.bias is not None:
+                    m.bias.data.uniform_(-1e-4, 1e-4)
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
         new_weights_from_weights = self.weight_to_weight(weights)
@@ -148,8 +160,8 @@ class DWSLayer(BaseLayer):
 
         return new_weights, new_biases
 
-    def _merge_and_normalize(self, t1, t2):
-        return tuple((a + b) / self.n_matrices for a, b in zip(t1, t2))
+    def _merge_and_normalize(self, tensor1, tensor2):
+        return tuple((t1 + t2) / self.n_matrices for t1, t2 in zip(tensor1, tensor2))
 
 
 class DownSampleDWSLayer(DWSLayer):
