@@ -41,9 +41,10 @@ class ReLU(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
-        return tuple(torch.relu(t) for t in weights), tuple(torch.relu(t) for t in biases)
+        # Use torch.relu_ for in-place ReLU operation to reduce memory footprint
+        return tuple(t.relu_() for t in weights), tuple(t.relu_() for t in biases)
 
 
 class LeakyReLU(nn.Module):
