@@ -104,8 +104,8 @@ class DWSLayer(BaseLayer):
 
         self.blocks = nn.ModuleList([
             WeightToWeightBlock(
-                in_features,
-                out_features,
+                in_features=in_features,
+                out_features=out_features,
                 shapes=weight_shapes,
                 bias=bias,
                 reduction=reduction,
@@ -114,9 +114,8 @@ class DWSLayer(BaseLayer):
                 set_layer=set_layer,
             ),
             BiasToBiasBlock(
-                # ...
-                in_features,
-                out_features,
+                in_features=in_features,
+                out_features=out_features,
                 shapes=bias_shapes,
                 bias=bias,
                 reduction=reduction,
@@ -125,9 +124,8 @@ class DWSLayer(BaseLayer):
                 set_layer=set_layer,
             ),
             BiasToWeightBlock(
-                # ...
-                in_features,
-                out_features,
+                in_features=in_features,
+                out_features=out_features,
                 bias_shapes=bias_shapes,
                 weight_shapes=weight_shapes,
                 bias=bias,
@@ -137,9 +135,8 @@ class DWSLayer(BaseLayer):
                 set_layer=set_layer,
             ),
             WeightToBiasBlock(
-                # ...
-                in_features,
-                out_features,
+                in_features=in_features,
+                out_features=out_features,
                 bias_shapes=bias_shapes,
                 weight_shapes=weight_shapes,
                 bias=bias,
