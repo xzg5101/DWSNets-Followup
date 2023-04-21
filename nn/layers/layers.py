@@ -48,26 +48,23 @@ class ReLU(nn.Module):
 
 
 class LeakyReLU(nn.Module):
-    def __init__(self, negative_slope: float = 0.01):
+    def __init__(self):
         super().__init__()
-        self.negative_slope = negative_slope
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        weights = tuple(F.leaky_relu(t, self.negative_slope) for t in weights)
-        biases = tuple(F.relu(t) for t in biases)
-        return weights, biases
+        return tuple(F.leaky_relu(t) for t in weights), tuple(F.relu(t) for t in biases)
+
 
 class Dropout(nn.Module):
     def __init__(self, p=0.1):
         super().__init__()
         self.p = p
+        self.dropout = lambda t: F.dropout(t, p=self.p)
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        return tuple(F.dropout(t, p=self.p) for t in weights), tuple(
-            F.dropout(t, p=self.p) for t in biases
-        )
+        return ([self.dropout(t) for t in weights], [self.dropout(t) for t in biases])
 
 
 class DWSLayer(BaseLayer):
