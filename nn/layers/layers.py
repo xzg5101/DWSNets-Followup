@@ -10,6 +10,7 @@ from nn.layers.bias_to_weight import BiasToWeightBlock
 from nn.layers.weight_to_bias import WeightToBiasBlock
 from nn.layers.weight_to_weight import WeightToWeightBlock
 
+import torch.nn.utils.rnn as rnn_utils
 
 class BN(nn.Module):
     def __init__(self, num_features, n_weights, n_biases):
@@ -25,13 +26,12 @@ class BN(nn.Module):
 
         # Pad the batches with zeros to the maximum batch size
         max_batch_size = max(w.shape[0] for w in weights)
-        weights_padded = [torch.zeros((max_batch_size,) + w.shape[1:], device=w.device) for w in weights]
-        biases_padded = [torch.zeros((max_batch_size,) + b.shape[1:], device=b.device) for b in biases]
-        for i, (w, b) in enumerate(zip(weights, biases)):
-            weights_padded[i][:w.shape[0]] = w
-            biases_padded[i][:b.shape[0]] = b
-        weights = weights_padded
-        biases = biases_padded
+        weights_padded = rnn_utils.pad_sequence(weights, batch_first=True, padding_value=0)
+        biases_padded = rnn_utils.pad_sequence(biases, batch_first=True, padding_value=0)
+        weights_padded = weights_padded[:, :max_batch_size]
+        biases_padded = biases_padded[:, :max_batch_size]
+        weights = weights_padded.unbind(dim=0)
+        biases = biases_padded.unbind(dim=0)
 
         # Concatenate all the weights along the batch dimension
         weights_concat = torch.cat(weights, dim=0)
@@ -47,7 +47,7 @@ class BN(nn.Module):
         # Apply BatchNorm1d on the concatenated weights
         new_weights_concat = self.weights_bn(weights_concat.permute(0, 2, 1).flatten(start_dim=1))
         new_weights_concat = new_weights_concat.reshape(max_batch_size, -1, weights_concat.shape[2]).permute(0, 2, 1)
-        new_weights = tuple(new_weights_concat.split(max_batch_size, dim=0))
+        new_weights = tuple(new_weights_concat.unbind(dim=0))
 
         # Apply BatchNorm1d on the biases
         new_biases = tuple(m(b.permute(0, 2, 1)).permute(0, 2, 1) for m, b in zip(self.biases_bn, biases))
