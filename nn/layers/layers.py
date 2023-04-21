@@ -27,9 +27,9 @@ class BN(nn.Module):
         for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
             shapes = w.shape
             new_weights[i] = (
-                m(w.permute(0, 3, 1, 2).contiguous().view(-1, *shapes[2:]))
-                .view(-1, *shapes[1:])
-                .reshape(*shapes)
+                m(w.permute(0, 3, 1, 2).flatten(start_dim=2))
+                .permute(0, 2, 1)
+                .reshape(shapes)
             )
 
         for i, (m, b) in enumerate(zip(self.biases_bn, biases)):
