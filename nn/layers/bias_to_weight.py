@@ -7,8 +7,6 @@ from nn.layers.base import BaseLayer, GeneralSetLayer
 
 
 class SameLayer(BaseLayer):
-    """Mapping bi -> Wi"""
-
     def __init__(
         self,
         in_features,
@@ -39,18 +37,25 @@ class SameLayer(BaseLayer):
         assert not (is_input_layer and is_output_layer)
 
         if self.is_input_layer:
-            out_f = out_features * out_shape[0]
-        elif self.is_output_layer:
-            in_f = in_features * out_shape[-1]
-            out_f = out_features * out_shape[-1]
-            self.layer = self._get_mlp(in_features=in_f, out_features=out_f, bias=bias)
-        else:
-            out_f = out_features
-
-        if not self.is_output_layer:
             self.layer = GeneralSetLayer(
                 in_features=in_features,
-                out_features=out_f,
+                out_features=out_features * out_shape[0],
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
+            )
+        elif self.is_output_layer:
+            self.layer = self._get_mlp(
+                in_features=in_features * out_shape[-1],
+                out_features=out_features * out_shape[-1],
+                bias=bias,
+            )
+        else:
+            self.layer = GeneralSetLayer(
+                in_features=in_features,
+                out_features=out_features,
                 reduction=reduction,
                 bias=bias,
                 n_fc_layers=n_fc_layers,
@@ -59,17 +64,18 @@ class SameLayer(BaseLayer):
             )
 
     def forward(self, x):
-        x = self.layer(x)
-
         if self.is_input_layer:
-            x = x.reshape(x.shape[0], self.out_shape[-1], self.out_shape[0], self.out_features)
+            x = self.layer(x)
+            x = x.view(x.size(0), self.out_shape[-1], self.out_shape[0], self.out_features)
             x = x.permute(0, 2, 1, 3)
         elif self.is_output_layer:
-            x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+            x = x.view(x.size(0), -1)
+            x = self.layer(x)
+            x = x.view(x.size(0), self.out_shape[-1], self.out_features)
+            x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
         else:
-            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
-        
+            x = self.layer(x)
+            x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
         return x
 
 
