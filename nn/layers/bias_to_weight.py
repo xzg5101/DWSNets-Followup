@@ -193,22 +193,30 @@ class NonNeighborInternalLayer(BaseLayer):
         self.last_dim_is_input = last_dim_is_input
         self.first_dim_is_output = first_dim_is_output
 
-        in_features *= in_shape[-1] if self.first_dim_is_output else 1
-        out_features *= (out_shape[0] if self.last_dim_is_input else 1) if self.first_dim_is_output or self.last_dim_is_input else 1
+        in_features = self.in_features * (in_shape[-1] if self.first_dim_is_output else 1)
+        out_features = self.out_features * (out_shape[0] if self.last_dim_is_input and not self.first_dim_is_output else 1)
 
         self.layer = self._get_mlp(
             in_features=in_features, out_features=out_features, bias=bias
         )
 
     def forward(self, x):
-        x = x.flatten(start_dim=1) if self.first_dim_is_output else self._reduction(x, dim=1)
-        x = self.layer(x)
-
         if self.first_dim_is_output:
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            x = x.flatten(start_dim=1)
+            x = self.layer(x)
+            if self.last_dim_is_input:
+                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            else:
+                x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         else:
-            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+            x = self._reduction(x, dim=1)
+            x = self.layer(x)
+            if self.last_dim_is_input:
+                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+                x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            else:
+                x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
