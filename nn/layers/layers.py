@@ -14,8 +14,12 @@ from nn.layers.weight_to_weight import WeightToWeightBlock
 class BN(nn.Module):
     def __init__(self, num_features, n_weights, n_biases):
         super().__init__()
-        self.weights_bn = [nn.BatchNorm1d(num_features) for _ in range(n_weights)]
-        self.biases_bn = [nn.BatchNorm1d(num_features) for _ in range(n_biases)]
+        self.weights_bn = nn.ModuleList(
+            nn.BatchNorm1d(num_features) for _ in range(n_weights)
+        )
+        self.biases_bn = nn.ModuleList(
+            nn.BatchNorm1d(num_features) for _ in range(n_biases)
+        )
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
@@ -23,8 +27,8 @@ class BN(nn.Module):
         for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
             shapes = w.shape
             new_weights[i] = (
-                m(w.permute(0, 3, 1, 2).flatten(start_dim=2, end_dim=-1))
-                .permute(0, 2, 1)
+                m(w.permute(0, 3, 1, 2).contiguous().view(-1, *shapes[2:]))
+                .view(-1, *shapes[1:])
                 .reshape(*shapes)
             )
 
