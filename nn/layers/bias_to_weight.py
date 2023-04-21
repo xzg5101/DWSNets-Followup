@@ -101,25 +101,12 @@ class SuccessiveLayers(BaseLayer):
         out_features,
         in_shape,
         out_shape,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "sab",
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
+        num_heads=8,
         last_dim_is_output=False,
     ):
-        """
-
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        :param num_heads:
-        :param set_layer:
-        """
         super().__init__(
             in_features,
             out_features,
@@ -129,7 +116,6 @@ class SuccessiveLayers(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
             num_heads=num_heads,
-            set_layer=set_layer,
         )
         self.last_dim_is_output = last_dim_is_output
         if self.last_dim_is_output:
@@ -148,22 +134,22 @@ class SuccessiveLayers(BaseLayer):
             bias=bias,
             n_fc_layers=n_fc_layers,
             num_heads=num_heads,
-            set_layer=set_layer,
         )
+        
+        # Repeat the out_shape dimensions to use for view and repeat operations later
+        self.repeat_shape = (1,) * (len(out_shape) + 1)
+        self.repeat_shape[-2] = out_shape[-1]
+        self.view_shape = (0,) + out_shape + (self.out_features,)
 
     def forward(self, x):
+        x = self.layer(x)
         if self.last_dim_is_output:
-            # (bs, d{L-1}, in_features)
-            # (bs, d{L-1}, dL * out_features)
-            x = self.layer(x)
-            # (bs, d{L-1}, dL * out_features)
-            x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
+            # Reshape to (bs, d{L-1}, dL * out_features)
+            x = x.view(x.shape[0], -1, self.out_features * self.out_shape[1])
         else:
-            # (bs, d{i+1}, in_features)
-            # (bs, d{i+1}, out_features)
-            x = self.layer(x)
-            # (bs, d{i+1}, d{i+2} out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            # Repeat the tensor along the last dimension and reshape to (bs, d{i+1}, d{i+2}, out_features)
+            x = x.unsqueeze(-2).repeat(*self.repeat_shape)
+            x = x.view(*self.view_shape)
         return x
 
 
