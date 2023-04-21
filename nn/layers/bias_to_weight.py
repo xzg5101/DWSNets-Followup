@@ -297,7 +297,6 @@ class NonNeighborInternalLayer(BaseLayer):
                 x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
-
 class BiasToWeightBlock(BaseLayer):
     """bi -> Wj"""
 
@@ -306,10 +305,7 @@ class BiasToWeightBlock(BaseLayer):
         in_features,
         out_features,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[
-            Tuple[int,],
-            ...,
-        ],
+        bias_shapes: Tuple[Tuple[int,], ...],
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -333,65 +329,50 @@ class BiasToWeightBlock(BaseLayer):
         self.bias_shapes = bias_shapes
         self.n_layers = len(bias_shapes)
 
-        self.layers = ModuleDict()
-        # construct layers:
-        for i in range(self.n_layers):
-            for j in range(self.n_layers):
-                if i == j:
-                    self.layers[f"{i}_{j}"] = SameLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=bias_shapes[i],
-                        out_shape=weight_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        num_heads=num_heads,
-                        set_layer=set_layer,
-                        n_fc_layers=n_fc_layers,
-                        is_input_layer=(
-                            i == 0
-                        ),  # todo: make sure this condition is correct
-                        is_output_layer=(
-                            j == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
-                elif i == j - 1:
-                    self.layers[f"{i}_{j}"] = SuccessiveLayers(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=bias_shapes[i],
-                        out_shape=weight_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        num_heads=num_heads,
-                        set_layer=set_layer,
-                        n_fc_layers=n_fc_layers,
-                        last_dim_is_output=(
-                            j == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
-                else:
-                    self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
-                        in_features=in_features,
-                        out_features=out_features,
-                        in_shape=bias_shapes[i],
-                        out_shape=weight_shapes[j],
-                        reduction=reduction,
-                        bias=bias,
-                        last_dim_is_input=(
-                            j == 0
-                        ),  # todo: make sure this condition is correct
-                        first_dim_is_output=(
-                            i == self.n_layers - 1
-                        ),  # todo: make sure this condition is correct
-                    )
+        self.layers = ModuleDict({
+            f"{i}_{j}": SameLayer(
+                in_features=in_features,
+                out_features=out_features,
+                in_shape=bias_shapes[i],
+                out_shape=weight_shapes[j],
+                reduction=reduction,
+                bias=bias,
+                num_heads=num_heads,
+                set_layer=set_layer,
+                n_fc_layers=n_fc_layers,
+                is_input_layer=(i == 0),
+                is_output_layer=(j == self.n_layers - 1),
+            ) if i == j else (
+                SuccessiveLayers(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=bias_shapes[i],
+                    out_shape=weight_shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    num_heads=num_heads,
+                    set_layer=set_layer,
+                    n_fc_layers=n_fc_layers,
+                    last_dim_is_output=(j == self.n_layers - 1),
+                ) if i == j - 1 else NonNeighborInternalLayer(
+                    in_features=in_features,
+                    out_features=out_features,
+                    in_shape=bias_shapes[i],
+                    out_shape=weight_shapes[j],
+                    reduction=reduction,
+                    bias=bias,
+                    last_dim_is_input=(j == 0),
+                    first_dim_is_output=(i == self.n_layers - 1),
+                )
+            )
+            for i in range(self.n_layers)
+            for j in range(self.n_layers)
+        })
 
     def forward(self, x: Tuple[torch.tensor]):
-        out_weights = [
-            0.0,
-        ] * len(x)
+        out_weights = [0.0] * len(x)
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                out_weights[j] = out_weights[j] + self.layers[f"{i}_{j}"](x[i])
+                out_weights[j] += self.layers[f"{i}_{j}"] @ x[i]
 
         return tuple(out_weights)
