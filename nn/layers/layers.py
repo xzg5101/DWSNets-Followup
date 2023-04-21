@@ -22,7 +22,16 @@ class BN(nn.Module):
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        batch_size = weights[0].shape[0]
+
+        # Pad the batches with zeros to the maximum batch size
+        max_batch_size = max(w.shape[0] for w in weights)
+        weights_padded = [torch.zeros((max_batch_size,) + w.shape[1:], device=w.device) for w in weights]
+        biases_padded = [torch.zeros((max_batch_size,) + b.shape[1:], device=b.device) for b in biases]
+        for i, (w, b) in enumerate(zip(weights, biases)):
+            weights_padded[i][:w.shape[0]] = w
+            biases_padded[i][:b.shape[0]] = b
+        weights = weights_padded
+        biases = biases_padded
 
         # Concatenate all the weights along the batch dimension
         weights_concat = torch.cat(weights, dim=0)
@@ -37,8 +46,8 @@ class BN(nn.Module):
 
         # Apply BatchNorm1d on the concatenated weights
         new_weights_concat = self.weights_bn(weights_concat.permute(0, 2, 1).flatten(start_dim=1))
-        new_weights_concat = new_weights_concat.reshape(batch_size, -1, weights_concat.shape[2]).permute(0, 2, 1)
-        new_weights = tuple(new_weights_concat.split(weights[0].shape[0], dim=0))
+        new_weights_concat = new_weights_concat.reshape(max_batch_size, -1, weights_concat.shape[2]).permute(0, 2, 1)
+        new_weights = tuple(new_weights_concat.split(max_batch_size, dim=0))
 
         # Apply BatchNorm1d on the biases
         new_biases = tuple(m(b.permute(0, 2, 1)).permute(0, 2, 1) for m, b in zip(self.biases_bn, biases))
