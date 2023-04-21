@@ -23,38 +23,38 @@ class BN(nn.Module):
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        new_weights = [
-            m(w.permute(0, 3, 1, 2).contiguous().flatten(start_dim=2))
-            .permute(0, 2, 1)
-            .reshape(w.shape)
-            for m, w in zip(self.weights_bn, weights)
-        ]
+        new_weights, new_biases = [None] * len(weights), [None] * len(biases)
+        for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
+            shapes = w.shape
+            new_weights[i] = (
+                m(w.permute(0, 3, 1, 2).flatten(start_dim=2))
+                .permute(0, 2, 1)
+                .reshape(shapes)
+            )
 
-        new_biases = [
-            m(b.permute(0, 2, 1).contiguous()).permute(0, 2, 1)
-            for m, b in zip(self.biases_bn, biases)
-        ]
+        for i, (m, b) in enumerate(zip(self.biases_bn, biases)):
+            new_biases[i] = m(b.permute(0, 2, 1)).permute(0, 2, 1)
 
         return tuple(new_weights), tuple(new_biases)
+
 
 class ReLU(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        # Use torch.relu_ for in-place ReLU operation to reduce memory footprint
-        return tuple(t.relu_() for t in weights), tuple(t.relu_() for t in biases)
+        return tuple(F.relu(t) for t in weights), tuple(F.relu(t) for t in biases)
 
 
 class LeakyReLU(nn.Module):
-    def __init__(self):
+    def __init__(self, negative_slope: float = 0.01):
         super().__init__()
+        self.negative_slope = negative_slope
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
         weights, biases = x
-        return tuple(F.leaky_relu(t) for t in weights), tuple(F.relu(t) for t in biases)
-
+        return tuple(F.leaky_relu(t, negative_slope=self.negative_slope) for t in weights), tuple(F.relu(t) for t in biases)
 
 class Dropout(nn.Module):
     def __init__(self, p=0.1):
