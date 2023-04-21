@@ -210,7 +210,7 @@ class NonNeighborInternalLayer(BaseLayer):
             x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
             x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         elif first_dim_is_output:
-            x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
+            x = x.reshape(x.shape[0], *self.out_shape[:-1], self.out_features * self.out_shape[-1])
             x = x.unsqueeze(1)
         elif last_dim_is_input:
             x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
