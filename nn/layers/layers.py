@@ -14,28 +14,27 @@ from nn.layers.weight_to_weight import WeightToWeightBlock
 class BN(nn.Module):
     def __init__(self, num_features, n_weights, n_biases):
         super().__init__()
-        self.weights_bn = nn.ModuleList(
-            nn.BatchNorm1d(num_features) for _ in range(n_weights)
-        )
+        self.weights_bn = nn.BatchNorm1d(num_features * n_weights)
         self.biases_bn = nn.ModuleList(
             nn.BatchNorm1d(num_features) for _ in range(n_biases)
         )
+        self.n_weights = n_weights
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        new_weights, new_biases = [None] * len(weights), [None] * len(biases)
-        for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
-            shapes = w.shape
-            new_weights[i] = (
-                m(w.permute(0, 3, 1, 2).flatten(start_dim=2))
-                .permute(0, 2, 1)
-                .reshape(shapes)
-            )
+        batch_size = weights[0].shape[0]
+        
+        # Concatenate all the weights along the batch dimension
+        weights_concat = torch.cat(weights, dim=0).permute(0, 3, 1, 2).flatten(start_dim=2)
+        
+        # Apply BatchNorm1d on the concatenated weights
+        new_weights_concat = self.weights_bn(weights_concat).reshape(batch_size, self.n_weights, -1, weights_concat.shape[-1])
+        new_weights = tuple(new_weights_concat.permute(0, 2, 3, 1).split(weights[0].shape[0], dim=0))
 
-        for i, (m, b) in enumerate(zip(self.biases_bn, biases)):
-            new_biases[i] = m(b.permute(0, 2, 1)).permute(0, 2, 1)
-
-        return tuple(new_weights), tuple(new_biases)
+        # Apply BatchNorm1d on the biases
+        new_biases = tuple(m(b.permute(0, 2, 1)).permute(0, 2, 1) for m, b in zip(self.biases_bn, biases))
+        
+        return new_weights, new_biases
 
 
 class ReLU(nn.Module):
