@@ -179,7 +179,7 @@ class DWSLayer(BaseLayer):
                 if m.bias is not None:
                     m.bias.data.uniform_(-1e-4, 1e-4)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x):
         weights, biases = x
         new_weights_from_weights = self.weight_to_weight(weights)
         new_weights_from_biases = self.bias_to_weight(biases)
