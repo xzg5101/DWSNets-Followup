@@ -373,6 +373,6 @@ class BiasToWeightBlock(BaseLayer):
         out_weights = [0.0] * len(x)
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                out_weights[j] += self.layers[f"{i}_{j}"] @ x[i]
+                out_weights[j] += self.layers[f"{i}_{j}"](x[i])
 
         return tuple(out_weights)
