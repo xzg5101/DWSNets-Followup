@@ -105,6 +105,7 @@ class SuccessiveLayers(BaseLayer):
         reduction: str = "max",
         n_fc_layers: int = 1,
         num_heads: int = 8,
+        set_layer: str = "sab",
         last_dim_is_output=False,
     ):
         super().__init__(
@@ -116,6 +117,7 @@ class SuccessiveLayers(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
             num_heads=num_heads,
+            set_layer=set_layer,
         )
         self.last_dim_is_output = last_dim_is_output
         if self.last_dim_is_output:
@@ -127,6 +129,7 @@ class SuccessiveLayers(BaseLayer):
             bias=bias,
             n_fc_layers=n_fc_layers,
             num_heads=num_heads,
+            set_layer=set_layer,
         )
 
     def forward(self, x):
