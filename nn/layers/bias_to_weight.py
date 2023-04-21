@@ -7,20 +7,35 @@ from nn.layers.base import BaseLayer, GeneralSetLayer
 
 
 class SameLayer(BaseLayer):
+    """Mapping bi -> Wi"""
+
     def __init__(
         self,
         in_features,
         out_features,
         in_shape,
         out_shape,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "sab",
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
+        num_heads=8,
+        set_layer="sab",
         is_input_layer=False,
         is_output_layer=False,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        :param num_heads:
+        :param set_layer:
+        :param is_output_layer: indicates that the bias is that of the last layer.
+        """
         super().__init__(
             in_features,
             out_features,
@@ -34,7 +49,7 @@ class SameLayer(BaseLayer):
         )
         self.is_output_layer = is_output_layer
         self.is_input_layer = is_input_layer
-        assert not (is_input_layer and is_output_layer)
+        assert not (is_input_layer and is_output_layer), "Cannot be both input and output layer"
 
         if self.is_input_layer:
             self.layer = GeneralSetLayer(
@@ -64,20 +79,18 @@ class SameLayer(BaseLayer):
             )
 
     def forward(self, x):
+        x = self.layer(x)
         if self.is_input_layer:
-            x = self.layer(x)
-            x = x.view(x.size(0), self.out_shape[-1], self.out_shape[0], self.out_features)
-            x = x.permute(0, 2, 1, 3)
+            x = x.transpose(1, 2).reshape(
+                x.shape[0], self.out_shape[0], self.out_shape[-1], self.out_features
+            )
         elif self.is_output_layer:
-            x = x.view(x.size(0), -1)
-            x = self.layer(x)
-            x = x.view(x.size(0), self.out_shape[-1], self.out_features)
-            x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
+            x = x.reshape(
+                x.shape[0], self.out_shape[-1], self.out_features
+            ).unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         else:
-            x = self.layer(x)
-            x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
+            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         return x
-
 
 class SuccessiveLayers(BaseLayer):
     """Mapping bi -> Wj where i=j-1"""
