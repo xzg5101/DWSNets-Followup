@@ -74,6 +74,40 @@ class DWSLayer(BaseLayer):
         # ...
     ):
         # ...
+        class DWSLayer(BaseLayer):
+    def __init__(
+        self,
+        weight_shapes: Tuple[Tuple[int, int], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        in_features,
+        out_features,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
+        num_heads=8,
+        set_layer="sab",
+        add_skip=False,
+        init_scale=1.0,
+        init_off_diag_scale_penalty=1.0,
+    ):
+        super().__init__(
+            in_features,
+            out_features,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+
+        self.weight_shapes = weight_shapes
+        self.bias_shapes = bias_shapes
+        self.n_matrices = len(weight_shapes) + len(bias_shapes)
+        self.add_skip = add_skip
+
         self.blocks = nn.ModuleList([
             WeightToWeightBlock(
                 in_features,
@@ -87,23 +121,59 @@ class DWSLayer(BaseLayer):
             ),
             BiasToBiasBlock(
                 # ...
+                in_features,
+                out_features,
+                shapes=bias_shapes,
+                bias=bias,
+                reduction=reduction,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             ),
             BiasToWeightBlock(
                 # ...
+                in_features,
+                out_features,
+                bias_shapes=bias_shapes,
+                weight_shapes=weight_shapes,
+                bias=bias,
+                reduction=reduction,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             ),
             WeightToBiasBlock(
                 # ...
+                in_features,
+                out_features,
+                bias_shapes=bias_shapes,
+                weight_shapes=weight_shapes,
+                bias=bias,
+                reduction=reduction,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             ),
         ])
         
         self.off_diag_penalty_cache = {}
+        self._init_model_params(init_scale, init_off_diag_scale_penalty)
+
+        if self.add_skip:
+            self.skip = self._get_mlp(in_features, out_features, bias=bias)
+            with torch.no_grad():
+                for m in self.skip.modules():
+                    if isinstance(m, nn.Linear):
+                        torch.nn.init.constant_(
+                            m.weight, 1.0 / (m.weight.numel() ** 0.5)
+                        )
+                        torch.nn.init.constant_(m.bias, 0.0)
 
         # ...
-
+    @staticmethod
     def _apply_off_diag_penalty(self, name):
         if name in self.off_diag_penalty_cache:
             return self.off_diag_penalty_cache[name]
-
         # ...
 
         result = (len(set(name.split(".")[2].split("_"))) == 2) or ("skip" not in name)
