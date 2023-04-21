@@ -140,8 +140,8 @@ class DWSLayer(BaseLayer):
                 m.weight.data = m.weight.data * g * scale * off_diag_penalty_
                 if m.bias is not None:
                     m.bias.data.uniform_(-1e-4, 1e-4)
-                    
-    def _apply_off_diag_penalty(name):
+
+    def _apply_off_diag_penalty(self, name):
         if "weight_to_weight" in name or "bias_to_bias" in name:
             return (len(set(name.split(".")[2].split("_"))) == 2) or (
                 "skip" not in name
