@@ -96,58 +96,55 @@ class DWSLayer(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-
         self.weight_shapes = weight_shapes
         self.bias_shapes = bias_shapes
         self.n_matrices = len(weight_shapes) + len(bias_shapes)
         self.add_skip = add_skip
 
-        self.blocks = nn.ModuleList([
-            WeightToWeightBlock(
-                in_features=in_features,
-                out_features=out_features,
-                shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            BiasToBiasBlock(
-                in_features=in_features,
-                out_features=out_features,
-                shapes=bias_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            BiasToWeightBlock(
-                in_features=in_features,
-                out_features=out_features,
-                bias_shapes=bias_shapes,
-                weight_shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-            WeightToBiasBlock(
-                in_features=in_features,
-                out_features=out_features,
-                bias_shapes=bias_shapes,
-                weight_shapes=weight_shapes,
-                bias=bias,
-                reduction=reduction,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            ),
-        ])
-        
-        self.off_diag_penalty_cache = {}
+        self.weight_to_weight = WeightToWeightBlock(
+            in_features,
+            out_features,
+            shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+        self.bias_to_bias = BiasToBiasBlock(
+            in_features,
+            out_features,
+            shapes=bias_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+        self.bias_to_weight = BiasToWeightBlock(
+            in_features,
+            out_features,
+            bias_shapes=bias_shapes,
+            weight_shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+
+        self.weight_to_bias = WeightToBiasBlock(
+            in_features,
+            out_features,
+            bias_shapes=bias_shapes,
+            weight_shapes=weight_shapes,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+        )
+
         self._init_model_params(init_scale, init_off_diag_scale_penalty)
 
         if self.add_skip:
@@ -160,45 +157,49 @@ class DWSLayer(BaseLayer):
                         )
                         torch.nn.init.constant_(m.bias, 0.0)
 
-        # ...
     @staticmethod
-    def _apply_off_diag_penalty(self, name):
-        if name in self.off_diag_penalty_cache:
-            return self.off_diag_penalty_cache[name]
-        # ...
-
-        result = (len(set(name.split(".")[2].split("_"))) == 2) or ("skip" not in name)
-        self.off_diag_penalty_cache[name] = result
-        return result
+    def _apply_off_diag_penalty(name):
+        if "weight_to_weight" in name or "bias_to_bias" in name:
+            # for example mane='bias_to_bias.layers.0_0.layer.set_layer.mab.fc_q',
+            # we extract the ["0", "0"] and check if the len of this set is of size 2
+            # (here it is False, i.e., on the diag)
+            return (len(set(name.split(".")[2].split("_"))) == 2) or (
+                "skip" not in name
+            )
+        else:
+            return True
 
     def _init_model_params(self, scale, off_diag_penalty=1.0):
         for n, m in self.named_modules():
             if isinstance(m, nn.Linear):
                 out_c, in_c = m.weight.shape
                 g = (2 * in_c / out_c) ** 0.5
+                # nn.init.xavier_normal_(m.weight, gain=g)
                 nn.init.xavier_normal_(m.weight)
+                # nn.init.kaiming_normal_(m.weight)
                 off_diag_penalty_ = (
-                    off_diag_penalty if self._apply_off_diag_penalty(self, n) else 1.0
+                    off_diag_penalty if self._apply_off_diag_penalty(n) else 1.0
                 )
                 m.weight.data = m.weight.data * g * scale * off_diag_penalty_
                 if m.bias is not None:
+                    # m.bias.data.fill_(0.0)
                     m.bias.data.uniform_(-1e-4, 1e-4)
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        new_weights_from_weights = self.blocks[0](weights)
-        new_weights_from_biases = self.blocks[2](biases)
+        new_weights_from_weights = self.weight_to_weight(weights)
+        new_weights_from_biases = self.bias_to_weight(biases)
 
-        new_biases_from_biases = self.blocks[1](biases)
-        new_biases_from_weights = self.blocks[3](weights)
+        new_biases_from_biases = self.bias_to_bias(biases)
+        new_biases_from_weights = self.weight_to_bias(weights)
 
         # add and normalize by the number of matrices
         new_weights = tuple(
-            (w0.add_(w1)).div_(self.n_matrices)
+            (w0 + w1) / self.n_matrices
             for w0, w1 in zip(new_weights_from_weights, new_weights_from_biases)
         )
         new_biases = tuple(
-            (b0.add_(b1)).div_(self.n_matrices)
+            (b0 + b1) / self.n_matrices
             for b0, b1 in zip(new_biases_from_biases, new_biases_from_weights)
         )
 
@@ -206,11 +207,10 @@ class DWSLayer(BaseLayer):
             skip_out = tuple(self.skip(w) for w in x[0]), tuple(
                 self.skip(b) for b in x[1]
             )
-            new_weights = tuple(ws.add_(w) for w, ws in zip(new_weights, skip_out[0]))
-            new_biases = tuple(bs.add_(b) for b, bs in zip(new_biases, skip_out[1]))
+            new_weights = tuple(ws + w for w, ws in zip(new_weights, skip_out[0]))
+            new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
 
         return new_weights, new_biases
-
 
 
 class DownSampleDWSLayer(DWSLayer):
@@ -234,8 +234,7 @@ class DownSampleDWSLayer(DWSLayer):
         init_off_diag_scale_penalty=1.0,
     ):
         d0 = weight_shapes[0][0]
-        new_weight_shapes = list(weight_shapes)
-        new_weight_shapes[0] = (downsample_dim, weight_shapes[0][1])
+        new_weight_shapes = [(downsample_dim, weight_shapes[0][1])] + list(weight_shapes[1:])
 
         super().__init__(
             weight_shapes=tuple(new_weight_shapes),
@@ -284,32 +283,18 @@ class DownSampleDWSLayer(DWSLayer):
         weights, biases = x
 
         # down-sample
-        # (bs, d0, d1, in_features)
         w0 = weights[0]
         w0_skip = self.skip(w0)
         bs, d0, d1, _ = w0.shape
-        # (bs, in_features, d1, d0)
-        w0 = w0.permute(0, 3, 2, 1)
-        # (bs, in_features, d1, downsample_dim)
-        w0 = self.down_sample(w0)
-        # (bs, downsample_dim, d1, in_features)
-        w0 = w0.permute(0, 3, 2, 1)
-        weights = list(weights)
-        weights[0] = w0
+        w0 = self.down_sample(w0.permute(0, 3, 2, 1)).permute(0, 3, 2, 1)
+        weights = (w0,) + weights[1:]
 
         # cannibal layer out
-        weights, biases = super().forward((tuple(weights), biases))
+        weights, biases = super().forward((weights, biases))
 
         # up-sample
-        w0 = weights[0]
-        # (bs, out_features, d1, downsample_dim)
-        w0 = w0.permute(0, 3, 2, 1)
-        # (bs, out_features, d1, d0)
-        w0 = self.up_sample(w0)
-        # (bs, d0, d1, out_features)
-        w0 = w0.permute(0, 3, 2, 1)
-        weights = list(weights)
-        weights[0] = w0 + w0_skip  # add skip connection
+        w0 = self.up_sample(weights[0].permute(0, 3, 2, 1)).permute(0, 3, 2, 1)
+        weights = (w0 + w0_skip,) + weights[1:]
 
         return weights, biases
 
