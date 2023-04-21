@@ -24,15 +24,20 @@ class BN(nn.Module):
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
         new_weights, new_biases = [None] * len(weights), [None] * len(biases)
+
+        device = self.weights_bn[0].weight.device
+
         for i, (m, w) in enumerate(zip(self.weights_bn, weights)):
             shapes = w.shape
+            w = w.to(device)
             new_weights[i] = (
-                m(w.permute(0, 3, 1, 2).flatten(start_dim=2))
-                .permute(0, 2, 1)
-                .reshape(shapes)
+                m(w.permute(0, 3, 1, 2).contiguous().view(-1, *shapes[2:]))
+                .view(-1, *shapes[1:])
+                .reshape(*shapes)
             )
 
         for i, (m, b) in enumerate(zip(self.biases_bn, biases)):
+            b = b.to(device)
             new_biases[i] = m(b.permute(0, 2, 1)).permute(0, 2, 1)
 
         return tuple(new_weights), tuple(new_biases)
