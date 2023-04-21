@@ -23,17 +23,26 @@ class BN(nn.Module):
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
         batch_size = weights[0].shape[0]
-        
+
         # Concatenate all the weights along the batch dimension
-        weights_concat = torch.cat(weights, dim=0).permute(0, 3, 1, 2).flatten(start_dim=2)
-        
+        weights_concat = torch.cat(weights, dim=0)
+
+        # Separate the weights along the channel dimension
+        weights_list = []
+        for i in range(self.n_weights):
+            start = i * weights[0].shape[1]
+            end = start + weights[0].shape[1]
+            weights_list.append(weights_concat[:, start:end])
+        weights_concat = torch.cat(weights_list, dim=0)
+
         # Apply BatchNorm1d on the concatenated weights
-        new_weights_concat = self.weights_bn(weights_concat).reshape(batch_size, self.n_weights, -1, weights_concat.shape[-1])
-        new_weights = tuple(new_weights_concat.permute(0, 2, 3, 1).split(weights[0].shape[0], dim=0))
+        new_weights_concat = self.weights_bn(weights_concat.permute(0, 2, 1).flatten(start_dim=1))
+        new_weights_concat = new_weights_concat.reshape(batch_size, -1, weights_concat.shape[2]).permute(0, 2, 1)
+        new_weights = tuple(new_weights_concat.split(weights[0].shape[0], dim=0))
 
         # Apply BatchNorm1d on the biases
         new_biases = tuple(m(b.permute(0, 2, 1)).permute(0, 2, 1) for m, b in zip(self.biases_bn, biases))
-        
+
         return new_weights, new_biases
 
 
