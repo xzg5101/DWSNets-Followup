@@ -203,17 +203,19 @@ class NonNeighborInternalLayer(BaseLayer):
 
     def forward(self, x):
         first_dim_is_output, last_dim_is_input = self.first_dim_is_output, self.last_dim_is_input
-        intermediate_vars = {
-            (True, True): (1, self.out_shape[0], self.out_features),
-            (True, False): (1, 1, *self.out_shape, 1),
-            (False, True): (1, self.out_shape[0], self.out_features),
-            (False, False): (1, 1, *self.out_shape, 1),
-        }
-
         x = x.flatten(start_dim=1) if first_dim_is_output else self._reduction(x, dim=1)
         x = self.layer(x)
-        x = x.reshape(x.shape[0], *intermediate_vars[first_dim_is_output, last_dim_is_input][1:])
-        x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1) if last_dim_is_input else x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+        
+        if first_dim_is_output and last_dim_is_input:
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        elif first_dim_is_output:
+            x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
+        elif last_dim_is_input:
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        else:
+            x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
 
         return x
 
