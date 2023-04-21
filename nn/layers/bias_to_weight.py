@@ -23,19 +23,6 @@ class SameLayer(BaseLayer):
         is_input_layer=False,
         is_output_layer=False,
     ):
-        """
-
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        :param num_heads:
-        :param set_layer:
-        :param is_output_layer: indicates that the bias is that of the last layer.
-        """
         super().__init__(
             in_features,
             out_features,
@@ -52,26 +39,18 @@ class SameLayer(BaseLayer):
         assert not (is_input_layer and is_output_layer)
 
         if self.is_input_layer:
-            self.layer = GeneralSetLayer(
-                in_features=in_features,
-                out_features=out_features * out_shape[0],  # d0 * out_features
-                reduction=reduction,
-                bias=bias,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-            )
+            out_f = out_features * out_shape[0]
         elif self.is_output_layer:
-            self.layer = self._get_mlp(
-                in_features=in_features * out_shape[-1],  # dL * in_features
-                out_features=out_features * out_shape[-1],  # dL * out_features
-                bias=bias,
-            )
+            in_f = in_features * out_shape[-1]
+            out_f = out_features * out_shape[-1]
+            self.layer = self._get_mlp(in_features=in_f, out_features=out_f, bias=bias)
         else:
-            # i != 0, L-1
+            out_f = out_features
+
+        if not self.is_output_layer:
             self.layer = GeneralSetLayer(
                 in_features=in_features,
-                out_features=out_features,
+                out_features=out_f,
                 reduction=reduction,
                 bias=bias,
                 n_fc_layers=n_fc_layers,
@@ -80,33 +59,17 @@ class SameLayer(BaseLayer):
             )
 
     def forward(self, x):
-        if self.is_input_layer:
-            # (bs, d1, in_features)
-            # (bs, d1, d0 * out_features)
-            x = self.layer(x)
-            # (bs, d1, d0, out_features)
-            x = x.reshape(
-                x.shape[0], self.out_shape[-1], self.out_shape[0], self.out_features
-            )
-            # (bs, d0, d1, out_features)
-            x = x.permute(0, 2, 1, 3)
+        x = self.layer(x)
 
+        if self.is_input_layer:
+            x = x.reshape(x.shape[0], self.out_shape[-1], self.out_shape[0], self.out_features)
+            x = x.permute(0, 2, 1, 3)
         elif self.is_output_layer:
-            # (bs, dL, in_features)
-            # (bs, dL * in_features)
-            x = x.flatten(start_dim=1)
-            # (bs, dL * out_features)
-            x = self.layer(x)
-            # (bs, dL, out_features)
             x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-            # (bs, d{L-1}, dL, out_features)
             x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         else:
-            # (bs, di, in_features)
-            # (bs, di, out_features)
-            x = self.layer(x)
-            # (bs, d{i-1}, di, out_features)
             x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+        
         return x
 
 
