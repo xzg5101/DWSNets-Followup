@@ -15,11 +15,11 @@ class SameLayer(BaseLayer):
         out_features,
         in_shape,
         out_shape,
-        bias=True,
-        reduction="max",
-        n_fc_layers=1,
-        num_heads=8,
-        set_layer="sab",
+        bias: bool = True,
+        reduction: str = "max",
+        n_fc_layers: int = 1,
+        num_heads: int = 8,
+        set_layer: str = "sab",
         is_input_layer=False,
         is_output_layer=False,
     ):
@@ -49,12 +49,12 @@ class SameLayer(BaseLayer):
         )
         self.is_output_layer = is_output_layer
         self.is_input_layer = is_input_layer
-        assert not (is_input_layer and is_output_layer), "Cannot be both input and output layer"
+        assert not (is_input_layer and is_output_layer)
 
         if self.is_input_layer:
             self.layer = GeneralSetLayer(
                 in_features=in_features,
-                out_features=out_features * out_shape[0],
+                out_features=out_features * out_shape[0],  # d0 * out_features
                 reduction=reduction,
                 bias=bias,
                 n_fc_layers=n_fc_layers,
@@ -63,11 +63,12 @@ class SameLayer(BaseLayer):
             )
         elif self.is_output_layer:
             self.layer = self._get_mlp(
-                in_features=in_features * out_shape[-1],
-                out_features=out_features * out_shape[-1],
+                in_features=in_features * out_shape[-1],  # dL * in_features
+                out_features=out_features * out_shape[-1],  # dL * out_features
                 bias=bias,
             )
         else:
+            # i != 0, L-1
             self.layer = GeneralSetLayer(
                 in_features=in_features,
                 out_features=out_features,
@@ -79,18 +80,35 @@ class SameLayer(BaseLayer):
             )
 
     def forward(self, x):
-        x = self.layer(x)
         if self.is_input_layer:
-            x = x.transpose(1, 2).reshape(
-                x.shape[0], self.out_shape[0], self.out_shape[-1], self.out_features
-            )
-        elif self.is_output_layer:
+            # (bs, d1, in_features)
+            # (bs, d1, d0 * out_features)
+            x = self.layer(x)
+            # (bs, d1, d0, out_features)
             x = x.reshape(
-                x.shape[0], self.out_shape[-1], self.out_features
-            ).unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+                x.shape[0], self.out_shape[-1], self.out_shape[0], self.out_features
+            )
+            # (bs, d0, d1, out_features)
+            x = x.permute(0, 2, 1, 3)
+
+        elif self.is_output_layer:
+            # (bs, dL, in_features)
+            # (bs, dL * in_features)
+            x = x.flatten(start_dim=1)
+            # (bs, dL * out_features)
+            x = self.layer(x)
+            # (bs, dL, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+            # (bs, d{L-1}, dL, out_features)
+            x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         else:
+            # (bs, di, in_features)
+            # (bs, di, out_features)
+            x = self.layer(x)
+            # (bs, d{i-1}, di, out_features)
             x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
         return x
+
 
 class SuccessiveLayers(BaseLayer):
     """Mapping bi -> Wj where i=j-1"""
@@ -165,6 +183,7 @@ class SuccessiveLayers(BaseLayer):
             # (bs, d{i+1}, d{i+2} out_features)
             x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         return x
+
 
 class NonNeighborInternalLayer(BaseLayer):
     """Mapping bi -> Wj where i != j,j-1"""
@@ -287,7 +306,10 @@ class BiasToWeightBlock(BaseLayer):
         in_features,
         out_features,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -311,50 +333,65 @@ class BiasToWeightBlock(BaseLayer):
         self.bias_shapes = bias_shapes
         self.n_layers = len(bias_shapes)
 
-        self.layers = ModuleDict({
-            f"{i}_{j}": SameLayer(
-                in_features=in_features,
-                out_features=out_features,
-                in_shape=bias_shapes[i],
-                out_shape=weight_shapes[j],
-                reduction=reduction,
-                bias=bias,
-                num_heads=num_heads,
-                set_layer=set_layer,
-                n_fc_layers=n_fc_layers,
-                is_input_layer=(i == 0),
-                is_output_layer=(j == self.n_layers - 1),
-            ) if i == j else (
-                SuccessiveLayers(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=bias_shapes[i],
-                    out_shape=weight_shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    num_heads=num_heads,
-                    set_layer=set_layer,
-                    n_fc_layers=n_fc_layers,
-                    last_dim_is_output=(j == self.n_layers - 1),
-                ) if i == j - 1 else NonNeighborInternalLayer(
-                    in_features=in_features,
-                    out_features=out_features,
-                    in_shape=bias_shapes[i],
-                    out_shape=weight_shapes[j],
-                    reduction=reduction,
-                    bias=bias,
-                    last_dim_is_input=(j == 0),
-                    first_dim_is_output=(i == self.n_layers - 1),
-                )
-            )
-            for i in range(self.n_layers)
-            for j in range(self.n_layers)
-        })
-
-    def forward(self, x: Tuple[torch.tensor]):
-        out_weights = [0.0] * len(x)
+        self.layers = ModuleDict()
+        # construct layers:
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                out_weights[j] += self.layers[f"{i}_{j}"] @ x[i]
+                if i == j:
+                    self.layers[f"{i}_{j}"] = SameLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=bias_shapes[i],
+                        out_shape=weight_shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        num_heads=num_heads,
+                        set_layer=set_layer,
+                        n_fc_layers=n_fc_layers,
+                        is_input_layer=(
+                            i == 0
+                        ),  # todo: make sure this condition is correct
+                        is_output_layer=(
+                            j == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
+                    )
+                elif i == j - 1:
+                    self.layers[f"{i}_{j}"] = SuccessiveLayers(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=bias_shapes[i],
+                        out_shape=weight_shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        num_heads=num_heads,
+                        set_layer=set_layer,
+                        n_fc_layers=n_fc_layers,
+                        last_dim_is_output=(
+                            j == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
+                    )
+                else:
+                    self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=bias_shapes[i],
+                        out_shape=weight_shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        last_dim_is_input=(
+                            j == 0
+                        ),  # todo: make sure this condition is correct
+                        first_dim_is_output=(
+                            i == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
+                    )
+
+    def forward(self, x: Tuple[torch.tensor]):
+        out_weights = [
+            0.0,
+        ] * len(x)
+        for i in range(self.n_layers):
+            for j in range(self.n_layers):
+                out_weights[j] = out_weights[j] + self.layers[f"{i}_{j}"](x[i])
 
         return tuple(out_weights)
