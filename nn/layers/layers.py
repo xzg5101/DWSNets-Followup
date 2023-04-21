@@ -60,12 +60,11 @@ class Dropout(nn.Module):
     def __init__(self, p=0.1):
         super().__init__()
         self.p = p
-        self.dropout = lambda t: F.dropout(t, p=self.p)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
-        return ([self.dropout(t) for t in weights], [self.dropout(t) for t in biases])
-
+        dropout_fn = lambda t: F.dropout(t, p=self.p, training=self.training)
+        return tuple(map(dropout_fn, weights)), tuple(map(dropout_fn, biases))
 
 class DWSLayer(BaseLayer):
     def __init__(
