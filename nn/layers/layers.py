@@ -37,14 +37,15 @@ class BN(nn.Module):
 
         return tuple(new_weights), tuple(new_biases)
 
-
 class ReLU(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
-        return tuple(F.relu(t) for t in weights), tuple(F.relu(t) for t in biases)
+        relu_weights = tuple(w.clamp(min=0) for w in weights)
+        relu_biases = tuple(b.clamp(min=0) for b in biases)
+        return relu_weights, relu_biases
 
 
 class LeakyReLU(nn.Module):
