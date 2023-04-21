@@ -167,6 +167,8 @@ class SuccessiveLayers(BaseLayer):
         return x
 
 class NonNeighborInternalLayer(BaseLayer):
+    """Mapping bi -> Wj where i != j,j-1"""
+
     def __init__(
         self,
         in_features,
@@ -192,33 +194,26 @@ class NonNeighborInternalLayer(BaseLayer):
         self.last_dim_is_input = last_dim_is_input
         self.first_dim_is_output = first_dim_is_output
 
-        if self.first_dim_is_output:
-            in_features = self.in_features * in_shape[-1]
-            out_features = self.out_features * (out_shape[0] if self.last_dim_is_input else 1)
-        else:
-            in_features = self.in_features
-            out_features = self.out_features * (out_shape[0] if self.last_dim_is_input else 1)
+        in_features = self.in_features * (in_shape[-1] if self.first_dim_is_output else 1)
+        out_features = self.out_features * (out_shape[0] if self.last_dim_is_input else 1)
 
-        self.layer = self._get_mlp(in_features=in_features, out_features=out_features, bias=bias)
+        self.layer = self._get_mlp(
+            in_features=in_features, out_features=out_features, bias=bias
+        )
 
     def forward(self, x):
-        first_dim_is_output, last_dim_is_input = self.first_dim_is_output, self.last_dim_is_input
-        x = x.flatten(start_dim=1) if first_dim_is_output else self._reduction(x, dim=1)
-        x = self.layer(x)
-        
-        if first_dim_is_output and last_dim_is_input:
+        if self.first_dim_is_output:
+            x = x.flatten(start_dim=1)
+            x = self.layer(x)
             x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-        elif first_dim_is_output:
-            x = x.reshape(x.shape[0], *self.out_shape[:-1], self.out_features * self.out_shape[-1])
-            x = x.unsqueeze(1)
-        elif last_dim_is_input:
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+            repeat_size = [1, 1, self.out_shape[-1], 1] if self.last_dim_is_input else [1, *self.out_shape, 1]
         else:
-            x = x.reshape(x.shape[0], *self.out_shape, self.out_features)
-            x = x.unsqueeze(1)
+            x = self._reduction(x, dim=1)
+            x = self.layer(x)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features) if self.last_dim_is_input else x.unsqueeze(1).unsqueeze(1)
+            repeat_size = [1, 1, self.out_shape[-1], 1] if self.last_dim_is_input else [1, *self.out_shape, 1]
 
+        x = x.repeat(*repeat_size)
         return x
 
 
