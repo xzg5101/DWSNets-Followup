@@ -48,13 +48,13 @@ class ReLU(nn.Module):
 
 
 class LeakyReLU(nn.Module):
-    def __init__(self, negative_slope: float = 0.01):
+    def __init__(self):
         super().__init__()
-        self.negative_slope = negative_slope
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
+    @staticmethod
+    def forward(x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
-        return tuple(F.leaky_relu(t, negative_slope=self.negative_slope) for t in weights), tuple(F.relu(t) for t in biases)
+        return tuple(F.leaky_relu(t) for t in weights), tuple(F.relu(t) for t in biases)
 
 class Dropout(nn.Module):
     def __init__(self, p=0.1):
