@@ -205,7 +205,7 @@ class DWSLayer(BaseLayer):
             new_biases = tuple(bs + b for b, bs in zip(new_biases, skip_out[1]))
 
         return new_weights, new_biases
-    
+
 
 
 class DownSampleDWSLayer(DWSLayer):
