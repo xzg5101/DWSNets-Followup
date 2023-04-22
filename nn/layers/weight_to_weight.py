@@ -489,54 +489,61 @@ class FromLastLayer(BaseLayer):
         return x
 
 
-class ToLastLayer(BaseLayer):
+import torch.nn as nn
+
+class ToLastLayer(nn.Module):
     """Mapping W_i -> W_{L-1} where i != 0, L-2"""
 
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        in_shape: tuple,
-        out_shape: tuple,
+        in_features,
+        out_features,
+        in_shape,
+        out_shape,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
     ):
-        """
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        """
-        super().__init__(
-            in_features,
-            out_features,
-            in_shape=in_shape,
-            out_shape=out_shape,
-            bias=bias,
-            reduction=reduction,
-            n_fc_layers=n_fc_layers,
-        )
+        super().__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.in_shape = in_shape
+        self.out_shape = out_shape
+        self.bias = bias
+        self.reduction = reduction
+        self.n_fc_layers = n_fc_layers
+
         self.layer = self._get_mlp(
-            in_features=in_features,  # dL * in_features
-            out_features=out_features * self.out_shape[-1],  # out_features * dL
+            in_features=in_features,
+            out_features=out_features * self.out_shape[-1],
             bias=bias,
         )
 
+    def _get_mlp(self, in_features, out_features, bias):
+        layers = []
+        for _ in range(self.n_fc_layers):
+            layers.append(nn.Linear(in_features, out_features, bias=bias))
+        return nn.ModuleList(layers)
+
+    def _reduction(self, x, dim):
+        if self.reduction == "max":
+            return torch.max(x, dim=dim).values
+        elif self.reduction == "mean":
+            return torch.mean(x, dim=dim)
+        elif self.reduction == "sum":
+            return torch.sum(x, dim=dim)
+        else:
+            raise ValueError(f"Invalid reduction type: {self.reduction}")
+
     def forward(self, x):
-        # (bs, di, d{i+1}, in_features)
-        # (bs, in_features, di * d{i+1})
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-        # (bs, in_features)
         x = self._reduction(x, dim=2)
-        # (bs, dL * out_features)
-        x = self.layer(x)
-        # (bs, dL, out_features)
-        x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-        # (bs, d{L-1}, dL, out_features)
+
+        for layer in self.layer:
+            x = layer(x)
+
+        x = x.view(x.shape[0], self.out_shape[-1], self.out_features)
         x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
         return x
 
