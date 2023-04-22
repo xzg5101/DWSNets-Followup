@@ -241,15 +241,15 @@ class SetKroneckerSetLayer(nn.Module):
         out_all = self.lin_all(x)
         # rows
         pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        out_rows = self.lin_n(pooled_rows).squeeze(1).view(bs, self.in_features, 1, 1, self.d2).expand(-1, -1, self.d1, -1, -1)
+        out_rows = self.lin_n(pooled_rows).squeeze(1).view(bs, 1, self.d1, 1, self.d2).expand(-1, self.in_features, -1, -1, -1)
         # cols
         pooled_cols = self._reduction(x, dim=2, keepdim=True)
-        out_cols = self.lin_m(pooled_cols).squeeze(2).view(bs, self.in_features, 1, self.d1, 1).expand(-1, -1, -1, -1, self.d2)
+        out_cols = self.lin_m(pooled_cols).squeeze(2).view(bs, 1, 1, self.d1, self.d2).expand(-1, self.in_features, -1, -1, -1)
         # both
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         pooled_all = self._reduction(x, dim=2)
         pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
-        out_both = self.lin_both(pooled_all).squeeze(1).squeeze(1).view(bs, self.in_features, 1, 1, 1).expand(-1, -1, self.d1, self.d1, -1)
+        out_both = self.lin_both(pooled_all).squeeze(1).squeeze(1).view(bs, 1, 1, 1, self.d2).expand(-1, self.in_features, self.d1, self.d1, -1)
 
         new_features = out_all.add_(out_rows).add_(out_cols).add_(out_both)
         new_features.mul_(0.25)
