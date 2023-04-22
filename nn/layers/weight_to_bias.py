@@ -141,7 +141,7 @@ class SuccessiveLayers(BaseLayer):
         if self.first_dim_is_output:
             x = x.flatten(start_dim=2)
         else:
-            x = F.max(x, dim=2).values if self.reduction == "max" else F.mean(x, dim=2)
+            x = torch.max(x, dim=2).values if self.reduction == "max" else torch.mean(x, dim=2)
 
         return self.layer(x)
 
