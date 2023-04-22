@@ -23,6 +23,20 @@ class SameLayer(BaseLayer):
         is_input_layer=False,
         is_output_layer=False,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        :param num_heads:
+        :param set_layer:
+        :param is_input_layer: indicates that the weight (and bias) is that of the last layer.
+        :param is_output_layer: indicates that the weight (and bias) is that of the last layer.
+        """
         super().__init__(
             in_features,
             out_features,
@@ -38,67 +52,81 @@ class SameLayer(BaseLayer):
         self.is_input_layer = is_input_layer
         assert not (is_input_layer and is_output_layer)
 
-        common_params = {
-            "reduction": reduction,
-            "bias": bias,
-            "n_fc_layers": n_fc_layers,
-            "num_heads": num_heads,
-            "set_layer": set_layer,
-        }
-
         if self.is_input_layer:
             self.layer = GeneralSetLayer(
-                in_features=in_features * in_shape[0],
-                out_features=out_features,
-                **common_params
+                in_features=in_features * in_shape[0],  # d0 * in_features
+                out_features=out_features,  # out_features
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             )
         elif self.is_output_layer:
             self.layer = self._get_mlp(
-                in_features=in_features * out_shape[-1],
-                out_features=out_features * out_shape[-1],
+                in_features=in_features * out_shape[-1],  # dL * in_features
+                out_features=out_features * out_shape[-1],  # dL * out_features
                 bias=bias,
             )
         else:
+            # i != 0, L-1
             self.layer = GeneralSetLayer(
                 in_features=in_features,
                 out_features=out_features,
-                **common_params
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             )
 
     def forward(self, x):
         if self.is_input_layer:
+            # (bs, d0, d1, in_features)
+            # (bs, d1, d0 * in_features)
             x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+            # (bs, d1, out_features)
             x = self.layer(x)
 
         elif self.is_output_layer:
+            # (bs, d{L-1}, dL, in_features)
+            # (bs, dL, in_features)
             x = self._reduction(x, dim=1)
+            # (bs, dL * in_features)
             x = x.flatten(start_dim=1)
+            # (bs, dL * out_features)
             x = self.layer(x)
+            # (bs, dL, out_features)
             x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
 
         else:
+            # (bs, di, d{i+1}, in_features)
+            # (bs, d{i+1}, in_features)
             x = self._reduction(x, dim=1)
+            # (bs, d{i+1}, out_features)
             x = self.layer(x)
 
         return x
+
 
 class SuccessiveLayers(BaseLayer):
     """Mapping Wi -> bj where i=j+1"""
 
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        in_shape: int,
-        out_shape: int,
+        in_features,
+        out_features,
+        in_shape,
+        out_shape,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
         num_heads: int = 8,
         set_layer: str = "sab",
-        first_dim_is_output: bool = False,
+        first_dim_is_output=False,
     ):
         """
+
         :param in_features: input feature dim
         :param out_features:
         :param in_shape:
@@ -110,9 +138,6 @@ class SuccessiveLayers(BaseLayer):
         :param set_layer:
         :param first_dim_is_output: first dim (i) is the output layer for the INR (i=L-1)
         """
-        self.first_dim_is_output = first_dim_is_output
-        in_features, out_features = self.adjust_features(in_features, out_features, in_shape, first_dim_is_output)
-
         super().__init__(
             in_features,
             out_features,
@@ -124,6 +149,15 @@ class SuccessiveLayers(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
+        self.first_dim_is_output = first_dim_is_output
+        if self.first_dim_is_output:
+            # i=L-1, j=L-2
+            in_features = self.in_features * in_shape[-1]  # in_features * dL
+            out_features = self.out_features
+        else:
+            # i != L-1
+            in_features = self.in_features
+            out_features = self.out_features
 
         self.layer = GeneralSetLayer(
             in_features=in_features,
@@ -135,18 +169,21 @@ class SuccessiveLayers(BaseLayer):
             set_layer=set_layer,
         )
 
-    def adjust_features(self, in_features: int, out_features: int, in_shape: int, first_dim_is_output: bool) -> tuple[int, int]:
-        if first_dim_is_output:
-            in_features = in_features * in_shape[-1]
-        return in_features, out_features
-
     def forward(self, x):
         if self.first_dim_is_output:
+            # (bs, d{L-1}, dL, in_features)
+            # (bs, d{L-1}, dL * in_features)
             x = x.flatten(start_dim=2)
-        else:
-            x = self._reduction(x, dim=2)
+            # (bs, d{L-1}, out_features)
+            x = self.layer(x)
 
-        x = self.layer(x)
+        else:
+            # (bs, di, d{i+1}, in_features)
+            # (bs, di, in_features)
+            x = self._reduction(x, dim=2)
+            # (bs, di, out_features)
+            x = self.layer(x)
+
         return x
 
 
@@ -180,6 +217,10 @@ class NonNeighborInternalLayer(BaseLayer):
         self.last_dim_is_output = last_dim_is_output
 
         # ... (the rest of the __init__ method remains unchanged)
+
+        self.layer = self._get_mlp(
+            in_features=in_features, out_features=out_features, bias=bias
+        )
 
     def forward(self, x):
         reshape_output = False
