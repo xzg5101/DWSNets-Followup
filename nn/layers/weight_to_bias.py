@@ -332,7 +332,10 @@ class WeightToBiasBlock(BaseLayer):
         in_features,
         out_features,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -357,20 +360,14 @@ class WeightToBiasBlock(BaseLayer):
         self.n_layers = len(bias_shapes)
 
         self.layers = ModuleDict()
-
         # construct layers:
         for i in range(self.n_layers):
-            is_input_layer = i == 0
-            first_dim_is_input = is_input_layer
-            first_dim_is_output = i == self.n_layers - 1
-            
             for j in range(self.n_layers):
+                is_input_layer = i == 0
                 is_output_layer = j == self.n_layers - 1
-                last_dim_is_output = is_output_layer
-                key = f"{i}_{j}"
-                
+
                 if i == j:
-                    self.layers[key] = SameLayer(
+                    self.layers[f"{i}_{j}"] = SameLayer(
                         in_features=in_features,
                         out_features=out_features,
                         in_shape=weight_shapes[i],
@@ -384,7 +381,7 @@ class WeightToBiasBlock(BaseLayer):
                         is_output_layer=is_output_layer,
                     )
                 elif i == j + 1:
-                    self.layers[key] = SuccessiveLayers(
+                    self.layers[f"{i}_{j}"] = SuccessiveLayers(
                         in_features=in_features,
                         out_features=out_features,
                         in_shape=weight_shapes[i],
@@ -394,21 +391,22 @@ class WeightToBiasBlock(BaseLayer):
                         num_heads=num_heads,
                         set_layer=set_layer,
                         n_fc_layers=n_fc_layers,
-                        first_dim_is_output=first_dim_is_output,
+                        first_dim_is_output=is_output_layer,
                     )
                 else:
-                    self.layers[key] = NonNeighborInternalLayer(
+                    self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
                         in_features=in_features,
                         out_features=out_features,
                         in_shape=weight_shapes[i],
                         out_shape=bias_shapes[j],
                         reduction=reduction,
                         bias=bias,
-                        first_dim_is_input=first_dim_is_input,
-                        first_dim_is_output=first_dim_is_output,
-                        last_dim_is_output=last_dim_is_output,
+                        first_dim_is_input=is_input_layer,
+                        first_dim_is_output=is_output_layer,
+                        last_dim_is_output=is_output_layer,
                     )
 
     def forward(self, x: Tuple[torch.tensor]):
         out_weights = [sum(self.layers[f"{i}_{j}"](x[i]) for i in range(self.n_layers)) for j in range(self.n_layers)]
+
         return tuple(out_weights)
