@@ -380,15 +380,6 @@ class ToFirstLayer(BaseLayer):
         n_fc_layers: int = 1,
         first_dim_is_output=False,
     ):
-        """
-        :param in_features: input feature dim
-        :param out_features: output feature dim
-        :param in_shape: input shape
-        :param out_shape: output shape
-        :param bias: whether to include bias in the linear layers
-        :param reduction: reduction method for the input tensor
-        :param n_fc_layers: number of fully connected layers
-        """
         super().__init__(
             in_features,
             out_features,
@@ -400,8 +391,12 @@ class ToFirstLayer(BaseLayer):
         )
         self.first_dim_is_output = first_dim_is_output
 
-        in_features = self.in_features * (self.in_shape[-1] if first_dim_is_output else 1)
-        out_features = self.out_features * self.out_shape[0]
+        if self.first_dim_is_output:
+            in_features = self.in_features * self.in_shape[-1]
+            out_features = self.out_features * self.out_shape[0]
+        else:
+            in_features = self.in_features
+            out_features = self.out_features * self.out_shape[0]
 
         self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
@@ -414,7 +409,7 @@ class ToFirstLayer(BaseLayer):
 
         x = self.layer(x.flatten(start_dim=1))
         x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-        x = torch.cat([x.unsqueeze(2)] * self.out_shape[-1], dim=2)
+        x = x.unsqueeze(2).repeat_interleave(self.out_shape[-1], dim=2)
 
         return x
 
