@@ -216,14 +216,23 @@ class NonNeighborInternalLayer(BaseLayer):
         self.first_dim_is_output = first_dim_is_output
         self.last_dim_is_output = last_dim_is_output
 
-        in_features = self.in_features * (in_shape[0] if self.first_dim_is_input or self.last_dim_is_output else 1)
-        out_features = self.out_features * (out_shape[0] if self.first_dim_is_output or self.last_dim_is_output else 1)
+        if self.first_dim_is_input:
+            if self.last_dim_is_output:
+                in_features = self.in_features * in_shape[0]  # in_features * d0
+                out_features = self.out_features * out_shape[0]  # out_features * dL
+            else:
+                in_features = self.in_features * in_shape[0]  # in_features * d0
+        elif self.first_dim_is_output:
+            in_features = self.in_features * in_shape[-1]  # in_features * dL
+        elif self.last_dim_is_output:
+            out_features = self.out_features * out_shape[-1]  # out_features * dL
 
         self.layer = self._get_mlp(in_features=in_features, out_features=out_features, bias=bias)
 
     def forward(self, x):
         if self.first_dim_is_input or self.first_dim_is_output:
-            x = self._reduction(x, dim=2 if self.first_dim_is_input else 1)
+            dim = 2 if self.first_dim_is_input else 1
+            x = self._reduction(x, dim=dim)
             x = x.flatten(start_dim=1)
             x = self.layer(x)
             if self.last_dim_is_output:
