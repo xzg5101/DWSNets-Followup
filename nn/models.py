@@ -50,25 +50,44 @@ class MLPModel(nn.Module):
 
 
 class MLPModelForClassification(nn.Module):
-    def __init__(self, in_dim, hidden_dim=256, n_hidden=2, n_classes=10, bn=False):
+    def __init__(
+        self,
+        in_dim: int,
+        hidden_dim: int = 256,
+        n_hidden: int = 2,
+        n_classes: int = 10,
+        bn: bool = False,
+    ):
         super().__init__()
-        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
+
+        layers = [
+            nn.Linear(in_dim, hidden_dim),
+            nn.ReLU(inplace=True),
+        ]
+
         for _ in range(n_hidden):
             if not bn:
-                layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+                layers.extend(
+                    [
+                        nn.Linear(hidden_dim, hidden_dim),
+                        nn.ReLU(inplace=True),
+                    ]
+                )
             else:
                 layers.extend(
                     [
                         nn.Linear(hidden_dim, hidden_dim),
                         nn.BatchNorm1d(hidden_dim),
-                        nn.ReLU(),
+                        nn.ReLU(inplace=True),
                     ]
                 )
 
         layers.append(nn.Linear(hidden_dim, n_classes))
         self.seq = nn.Sequential(*layers)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(
+        self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]
+    ) -> torch.Tensor:
         weight, bias = x
         all_weights = weight + bias
         weight = torch.cat([w.flatten(start_dim=1) for w in all_weights], dim=-1)
