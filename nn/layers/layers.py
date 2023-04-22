@@ -398,40 +398,46 @@ class InvariantLayer(BaseLayer):
         return self.layer(pooled_all)
 
 
-class NaiveInvariantLayer(BaseLayer):
+class NaiveInvariantLayer(nn.Module):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
         in_features,
         out_features,
         bias=True,
         reduction="max",
         n_fc_layers=1,
     ):
-        super().__init__(
-            in_features,
-            out_features,
-            bias=bias,
-            reduction=reduction,
-            n_fc_layers=n_fc_layers,
-        )
+        super().__init__()
         self.weight_shapes = weight_shapes
         self.bias_shapes = bias_shapes
         n_layers = len(weight_shapes) + len(bias_shapes)
-        self.layer = self._get_mlp(in_features * n_layers, out_features, bias=bias)
+        self.layer = self._get_mlp(
+            in_features=in_features * n_layers, out_features=out_features, bias=bias
+        )
+        self.reduction = torch.max if reduction == "max" else torch.mean
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def _get_mlp(self, in_features, out_features, bias=True):
+        return nn.Sequential(
+            nn.Linear(in_features, out_features, bias=bias),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weights, biases = x
         pooled_weights = torch.cat(
             [
-                self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+                self.reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2).values
                 for w in weights
             ],
             dim=-1,
         )
         pooled_biases = torch.cat(
-            [self._reduction(b, dim=1) for b in biases], dim=-1
+            [self.reduction(b, dim=1).values for b in biases], dim=-1
         )
         pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
         return self.layer(pooled_all)
