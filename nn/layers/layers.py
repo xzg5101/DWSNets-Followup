@@ -343,7 +343,7 @@ class InvariantLayer(BaseLayer):
         weights, biases = x
         first_w, last_w = weights[0], weights[-1]
 
-        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(sstart_dim=2)
+        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
         pooled_last_w = last_w.flatten(start_dim=2)
         pooled_first_w = self._reduction(pooled_first_w, dim=1)
         pooled_last_w = self._reduction(pooled_last_w, dim=1)
