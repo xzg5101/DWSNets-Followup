@@ -318,12 +318,15 @@ class InvariantLayer(BaseLayer):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int], ...],
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        in_features,
+        out_features,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
     ):
         super().__init__(
             in_features,
@@ -335,16 +338,19 @@ class InvariantLayer(BaseLayer):
         self.weight_shapes = weight_shapes
         self.bias_shapes = bias_shapes
         n_layers = len(weight_shapes) + len(bias_shapes)
-
-        total_in_features = (
-            in_features * (n_layers - 3)
-            + in_features * weight_shapes[0][0]
-            + in_features * weight_shapes[-1][-1]
-            + in_features * bias_shapes[-1][-1]
-        )
-
         self.layer = self._get_mlp(
-            in_features=total_in_features,
+            in_features=(
+                in_features * (n_layers - 3)
+                +
+                # in_features * d0 * d1 - first weight matrix
+                in_features * weight_shapes[0][0] * weight_shapes[0][1]
+                +
+                # in_features * d{L-1} * dL - last weight matrix
+                in_features * weight_shapes[-1][0] * weight_shapes[-1][1]
+                +
+                # in_features * dL - last bias
+                in_features * bias_shapes[-1][0]
+            ),
             out_features=out_features,
             bias=bias,
         )
