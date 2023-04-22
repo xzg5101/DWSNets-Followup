@@ -441,16 +441,28 @@ class ToFirstLayer(BaseLayer):
 
 
 class FromLastLayer(BaseLayer):
+    """Mapping W_{L-1} -> W_j where j != 0, L-2"""
+
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        in_shape: Tuple[int],
-        out_shape: Tuple[int],
+        in_features,
+        out_features,
+        in_shape,
+        out_shape,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        """
         super().__init__(
             in_features,
             out_features,
@@ -461,14 +473,18 @@ class FromLastLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
         )
         self.layer = self._get_mlp(
-            in_features=in_features * self.in_shape[-1],
-            out_features=out_features,
+            in_features=in_features * self.in_shape[-1],  # dL * in_features
+            out_features=out_features,  # out_features
             bias=bias,
         )
 
     def forward(self, x):
+        # (bs, d{L-1}, dL, in_features)
+        # (bs, dL, in_features)
         x = self._reduction(x, dim=1)
+        # (bs, out_features)
         x = self.layer(x.flatten(start_dim=1))
+        # (bs, *out_shape, out_features)
         x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
