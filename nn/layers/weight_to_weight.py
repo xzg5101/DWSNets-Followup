@@ -313,9 +313,15 @@ class FromFirstLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
         )
         self.last_dim_is_output = last_dim_is_output
+        self.in_features_mul_in_shape = self.in_features * self.in_shape[0]
+        self.out_features_mul_out_shape = self.out_features * self.out_shape[1]
 
-        in_features = self.in_features * self.in_shape[0]
-        out_features = self.out_features * (self.out_shape[1] if self.last_dim_is_output else 1)
+        if self.last_dim_is_output:
+            in_features = self.in_features_mul_in_shape
+            out_features = self.out_features_mul_out_shape
+        else:
+            in_features = self.in_features_mul_in_shape
+            out_features = self.out_features
 
         self.layer = self._get_mlp(
             in_features=in_features, out_features=out_features, bias=bias
@@ -323,16 +329,13 @@ class FromFirstLayer(BaseLayer):
 
     def forward(self, x):
         x = self._reduction(x, dim=2)
-        x = self.layer(x.flatten(start_dim=1))
 
         if self.last_dim_is_output:
-            x = (
-                x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
-                .unsqueeze(1)
-                .repeat(1, self.out_shape[0], 1, 1)
-            )
+            x = self.layer(x.flatten(start_dim=1))
+            x = x.view(x.shape[0], self.out_shape[-1], self.out_features).unsqueeze_(1).repeat(1, self.out_shape[0], 1, 1)
         else:
-            x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+            x = self.layer(x.flatten(start_dim=1))
+            x = x.unsqueeze_(1).unsqueeze_(1).repeat(1, *self.out_shape, 1)
 
         return x
 
