@@ -391,6 +391,7 @@ class WeightToBiasBlock(BaseLayer):
             layer_args.update({'first_dim_is_output': i == self.n_layers - 1})
             return SuccessiveLayers(**layer_args)
         else:
+            layer_args.pop('num_heads')  # Remove the num_heads argument for NonNeighborInternalLayer
             layer_args.update({
                 'first_dim_is_input': i == 0,
                 'first_dim_is_output': i == self.n_layers - 1,
