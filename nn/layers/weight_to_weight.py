@@ -303,6 +303,16 @@ class FromFirstLayer(BaseLayer):
         n_fc_layers: int = 1,
         last_dim_is_output=False,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        """
         super().__init__(
             in_features,
             out_features,
@@ -313,30 +323,45 @@ class FromFirstLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
         )
         self.last_dim_is_output = last_dim_is_output
-        self._init_layer()
-
-    def _init_layer(self):
-        in_features = self.in_features * self.in_shape[0]
-        out_features = (
-            self.out_features * self.out_shape[1]
-            if self.last_dim_is_output
-            else self.out_features
-        )
-        self.layer = self._get_mlp(
-            in_features=in_features, out_features=out_features, bias=self.bias
-        )
-
-    def forward(self, x):
-        x = self._reduction(x, dim=2)
-        x = self.layer(x.flatten(start_dim=1))
 
         if self.last_dim_is_output:
+            # i=0, j=L-1
+            in_features = self.in_features * self.in_shape[0]  # d0 * in_features
+            out_features = self.out_features * self.out_shape[1]  # dL * out_features
+            self.layer = self._get_mlp(
+                in_features=in_features, out_features=out_features, bias=bias
+            )
+
+        else:
+            # i=0, j != L-1
+            in_features = self.in_features * self.in_shape[0]  # d0 * in_features
+            out_features = self.out_features  # out_features
+            self.layer = self._get_mlp(
+                in_features=in_features, out_features=out_features, bias=bias
+            )
+
+    def forward(self, x):
+        if self.last_dim_is_output:
+            # i=0, j=L-1
+            # (bs, d0, d1, in_features)
+            # (bs, d0, in_features)
+            x = self._reduction(x, dim=2)
+            # (bs, dL * out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d_{L-1}, dL, out_features)
             x = (
                 x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
                 .unsqueeze(1)
                 .repeat(1, self.out_shape[0], 1, 1)
             )
         else:
+            # i=0, j != L-1
+            # (bs, d0, d1, in_features)
+            # (bs, d0, in_features)
+            x = self._reduction(x, dim=2)
+            # (bs, out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d_j, d_{j+1}, out_features)
             x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
