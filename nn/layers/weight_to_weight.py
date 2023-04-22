@@ -213,9 +213,8 @@ class GeneralMatrixSetLayer(BaseLayer):
 
         return x
 
-
 from torch import nn
-class SetKroneckerSetLayer(nn.Module):
+class SetKroneckerSetLayer(BaseLayer):
     def __init__(
         self,
         in_features,
@@ -225,47 +224,37 @@ class SetKroneckerSetLayer(nn.Module):
         bias=True,
         n_fc_layers=1,
     ):
-        super().__init__()
+        super().__init__(
+            in_features=in_features,
+            out_features=out_features,
+            in_shape=in_shape,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+            bias=bias,
+        )
         self.d1, self.d2 = in_shape
         self.in_features = in_features
-        self.reduction = reduction
 
-        self.lin_all = self._get_mlp(in_features, out_features, bias=bias)
-        self.lin_n = self._get_mlp(in_features, out_features, bias=bias)
-        self.lin_m = self._get_mlp(in_features, out_features, bias=bias)
-        self.lin_both = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_layers = nn.ModuleList([self._get_mlp(in_features, out_features, bias=bias) for _ in range(4)])
 
     def forward(self, x):
-        bs = x.shape[0]
-        # all
-        out_all = self.lin_all(x)
-        # rows
-        pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        out_rows = self.lin_n(pooled_rows).squeeze(1).view(bs, 1, self.d1, 1, self.d2).expand(-1, self.in_features, -1, -1, -1)
-        # cols
-        pooled_cols = self._reduction(x, dim=2, keepdim=True)
-        out_cols = self.lin_m(pooled_cols).squeeze(2).view(bs, 1, 1, self.d1, self.d2).expand(-1, self.in_features, -1, -1, -1)
-        # both
+        shapes = x.shape
+        bs = shapes[0]
+
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         pooled_all = self._reduction(x, dim=2)
         pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
-        out_both = self.lin_both(pooled_all).squeeze(1).squeeze(1).view(bs, 1, 1, 1, self.d2).expand(-1, self.in_features, self.d1, self.d1, -1)
 
-        new_features = out_all.add_(out_rows).add_(out_cols).add_(out_both)
-        new_features.mul_(0.25)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+
+        out_all = self.lin_layers[0](x)
+        out_rows = self.lin_layers[1](pooled_rows)
+        out_cols = self.lin_layers[2](pooled_cols)
+        out_both = self.lin_layers[3](pooled_all)
+
+        new_features = out_all * 0.25 + out_rows * 0.25 + out_cols * 0.25 + out_both * 0.25
         return new_features
-
-    def _get_mlp(self, in_features, out_features, bias=True):
-        return nn.Sequential(
-            nn.Linear(in_features, out_features, bias=bias),
-            nn.ReLU(inplace=True)
-        )
-
-    def _reduction(self, x, dim, keepdim=True):
-        if self.reduction == "max":
-            return torch.max(x, dim=dim, keepdim=keepdim)[0]
-        else:
-            return torch.mean(x, dim=dim, keepdim=keepdim)
 
 class FromFirstLayer(BaseLayer):
     """Mapping W_0 -> W_j where j != 1"""
