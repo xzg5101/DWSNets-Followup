@@ -342,14 +342,14 @@ class InvariantLayer(BaseLayer):
             in_features=(
                 in_features * (n_layers - 3)
                 +
-                # in_features * d0 * d1 - first weight matrix
-                in_features * weight_shapes[0][0] * weight_shapes[0][1]
+                # in_features * d0 - first weight matrix
+                in_features * weight_shapes[0][1]
                 +
-                # in_features * d{L-1} * dL - last weight matrix
-                in_features * weight_shapes[-1][0] * weight_shapes[-1][1]
+                # in_features * dL - last weight matrix
+                in_features * weight_shapes[-1][-1]
                 +
                 # in_features * dL - last bias
-                in_features * bias_shapes[-1][0]
+                in_features * bias_shapes[-1][-1]
             ),
             out_features=out_features,
             bias=bias,
