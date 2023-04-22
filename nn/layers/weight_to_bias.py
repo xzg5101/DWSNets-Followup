@@ -246,22 +246,22 @@ class NonNeighborInternalLayer(BaseLayer):
             if self.last_dim_is_output:
                 x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
             else:
-                x = self.repeat_output(x)
+                x = self.repeat_output(x, self.out_shape[0])
         elif self.first_dim_is_output or not self.last_dim_is_output:
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
             x = self._reduction(x, dim=2)
             x = self.layer(x)
-            x = self.repeat_output(x)
+            x = self.repeat_output(x, self.out_shape[0])
         else:
             x = self._reduction(x, dim=1)
             x = x.flatten(start_dim=1)
             x = self.layer(x)
-            x = self.repeat_output(x)
+            x = self.repeat_output(x, self.out_shape[0])
 
         return x
 
-    def repeat_output(self, x):
-        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1)
+    def repeat_output(self, x, repeat_dim):
+        x = x.unsqueeze(1).repeat(1, repeat_dim, 1)
         return x
 
 
