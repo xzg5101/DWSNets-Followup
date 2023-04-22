@@ -342,7 +342,7 @@ class InvariantLayer(BaseLayer):
             in_features=(
                 in_features * (n_layers - 3)
                 +
-                # in_features * d0 - first weight matrix
+                # in_features * d1 - first weight matrix
                 in_features * weight_shapes[0][1]
                 +
                 # in_features * dL - last weight matrix
