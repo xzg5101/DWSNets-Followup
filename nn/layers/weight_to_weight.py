@@ -367,6 +367,8 @@ class FromFirstLayer(BaseLayer):
 
 
 class ToFirstLayer(BaseLayer):
+    """Mapping W_i -> W_0 where i != 1"""
+
     def __init__(
         self,
         in_features,
@@ -377,49 +379,6 @@ class ToFirstLayer(BaseLayer):
         reduction: str = "max",
         n_fc_layers: int = 1,
         first_dim_is_output=False,
-    ):
-        super().__init__(
-            in_features,
-            out_features,
-            in_shape=in_shape,
-            out_shape=out_shape,
-            bias=bias,
-            reduction=reduction,
-            n_fc_layers=n_fc_layers,
-        )
-        self.first_dim_is_output = first_dim_is_output
-
-        if self.first_dim_is_output:
-            in_features *= self.in_shape[-1]
-        out_features *= self.out_shape[0]
-        self.layer = self._get_mlp(in_features, out_features, bias=bias)
-
-    def forward(self, x):
-        if self.first_dim_is_output:
-            x = self._reduction(x, dim=1)
-            x = self.layer(x.flatten(start_dim=1))
-        else:
-            x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-            x = self._reduction(x, dim=2)
-            x = self.layer(x.flatten(start_dim=1))
-
-        x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-        x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
-        return x
-
-
-class FromLastLayer(BaseLayer):
-    """Mapping W_{L-1} -> W_j where j != 0, L-2"""
-
-    def __init__(
-        self,
-        in_features,
-        out_features,
-        in_shape,
-        out_shape,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
     ):
         """
 
@@ -440,19 +399,78 @@ class FromLastLayer(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
         )
+        self.first_dim_is_output = first_dim_is_output
+
+        if self.first_dim_is_output:
+            # i=L-1, j=0
+            in_features = self.in_features * self.in_shape[-1]  # dL * in_features
+            out_features = self.out_features * self.out_shape[0]  # d0 * out_features
+            self.layer = self._get_mlp(in_features, out_features, bias=bias)
+
+        else:
+            # i!=L-1, j=0
+            in_features = self.in_features  # in_features
+            out_features = self.out_features * self.out_shape[0]  # d0 * out_features
+            self.layer = self._get_mlp(in_features, out_features, bias=bias)
+
+    def forward(self, x):
+        if self.first_dim_is_output:
+            # i=L-1, j=0
+            # (bs, d{L-1}, dL, in_features)
+            # (bs, dL, in_features)
+            x = self._reduction(x, dim=1)
+            # (bs, d0 * out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d0, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            # (bs, d0, d1, out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        else:
+            # (bs, dj, d{j+1}, in_features)
+            # (bs, in_features, dj * d{j+1})
+            x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+            # (bs, in_features)
+            x = self._reduction(x, dim=2)
+            # (bs, d0 * out_features)
+            x = self.layer(x.flatten(start_dim=1))
+            # (bs, d0, out_features)
+            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            # (bs, d0, d1, out_features)
+            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+        return x
+
+
+class FromLastLayer(BaseLayer):
+    """Mapping W_{L-1} -> W_j where j != 0, L-2"""
+
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        in_shape,
+        out_shape,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
+    ):
+        super().__init__(
+            in_features,
+            out_features,
+            in_shape=in_shape,
+            out_shape=out_shape,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+        )
         self.layer = self._get_mlp(
-            in_features=in_features * self.in_shape[-1],  # dL * in_features
-            out_features=out_features,  # out_features
+            in_features=in_features * self.in_shape[-1],
+            out_features=out_features,
             bias=bias,
         )
 
     def forward(self, x):
-        # (bs, d{L-1}, dL, in_features)
-        # (bs, dL, in_features)
         x = self._reduction(x, dim=1)
-        # (bs, out_features)
         x = self.layer(x.flatten(start_dim=1))
-        # (bs, *out_shape, out_features)
         x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
