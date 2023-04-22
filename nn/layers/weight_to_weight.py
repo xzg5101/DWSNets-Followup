@@ -593,7 +593,7 @@ class NonNeighborInternalLayer(BaseLayer):
         x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
-import itertools
+
 class WeightToWeightBlock(BaseLayer):
     def __init__(
         self,
@@ -622,67 +622,208 @@ class WeightToWeightBlock(BaseLayer):
         self.n_layers = len(shapes)
 
         self.layers = ModuleDict()
-        self._construct_layers(in_features, out_features, bias, reduction, num_heads, set_layer, n_fc_layers)
+        # construct layers:
+        for i in range(self.n_layers):
+            for j in range(self.n_layers):
+                if i == j:
+                    if i == 0:
+                        # W0 -> W0
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            first_dim_is_input=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    elif j == self.n_layers - 1:
+                        # W{L-1} -> W{L-1}
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            last_dim_is_input=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    else:
+                        self.layers[f"{i}_{j}"] = SetKroneckerSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            reduction=reduction,
+                            bias=bias,
+                            n_fc_layers=n_fc_layers,
+                        )
 
-    def _construct_layers(self, in_features, out_features, bias, reduction, num_heads, set_layer, n_fc_layers):
-        for i, j in itertools.product(range(self.n_layers), repeat=2):
-            layer_kwargs = {
-                "in_features": in_features,
-                "out_features": out_features,
-                "in_shape": self.shapes[i],
-                "out_shape": self.shapes[j],
-                "reduction": reduction,
-                "bias": bias,
-                "num_heads": num_heads,
-                "set_layer": set_layer,
-                "n_fc_layers": n_fc_layers,
-                "in_index": i,
-                "out_index": j,
-            }
-
-            first_dim_is_input = i == 0
-            last_dim_is_input = i == self.n_layers - 1
-            first_dim_is_output = j == 0
-            last_dim_is_output = j == self.n_layers - 1
-
-            if i == j:
-                if first_dim_is_input or last_dim_is_input:
-                    layer_kwargs.update({"first_dim_is_input": first_dim_is_input, "last_dim_is_input": last_dim_is_input})
-                    layer = GeneralMatrixSetLayer(**layer_kwargs)
-                else:
-                    layer = SetKroneckerSetLayer(**layer_kwargs)
-            elif abs(i - j) == 1:
-                if first_dim_is_input or last_dim_is_input or first_dim_is_output or last_dim_is_output:
-                    layer_kwargs.update({"first_dim_is_input": first_dim_is_input, "last_dim_is_input": last_dim_is_input, "first_dim_is_output": first_dim_is_output, "last_dim_is_output": last_dim_is_output})
-                    layer = GeneralMatrixSetLayer(**layer_kwargs)
-                else:
-                    layer = GeneralMatrixSetLayer(**layer_kwargs)
-            else:
-                if i == 0:
-                    layer_kwargs.pop("num_heads")
-                    layer_kwargs.pop("set_layer")
-                    layer = FromFirstLayer(**layer_kwargs, last_dim_is_output=last_dim_is_output)
+                elif i == j - 1:
+                    if i == 0:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            first_dim_is_input=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    elif j == self.n_layers - 1:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            last_dim_is_input=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    else:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            in_index=i,
+                            out_index=j,
+                        )
+                elif i == j + 1:
+                    if j == 0:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            last_dim_is_input=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    elif i == self.n_layers - 1:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            first_dim_is_output=True,
+                            in_index=i,
+                            out_index=j,
+                        )
+                    else:
+                        self.layers[f"{i}_{j}"] = GeneralMatrixSetLayer(
+                            in_features=in_features,
+                            out_features=out_features,
+                            in_shape=shapes[i],
+                            out_shape=shapes[j],
+                            reduction=reduction,
+                            bias=bias,
+                            num_heads=num_heads,
+                            set_layer=set_layer,
+                            n_fc_layers=n_fc_layers,
+                            in_index=i,
+                            out_index=j,
+                        )
+                elif i == 0:
+                    self.layers[f"{i}_{j}"] = FromFirstLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                        last_dim_is_output=(
+                            j == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
+                    )
                 elif j == 0:
-                    layer_kwargs.pop("num_heads")
-                    layer_kwargs.pop("set_layer")
-                    layer = ToFirstLayer(**layer_kwargs, first_dim_is_output=first_dim_is_output)
+                    self.layers[f"{i}_{j}"] = ToFirstLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                        first_dim_is_output=(
+                            i == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
+                    )
                 elif i == self.n_layers - 1:
-                    layer_kwargs.pop("num_heads")
-                    layer_kwargs.pop("set_layer")
-                    layer = FromLastLayer(**layer_kwargs)
+                    # j != i-1, 0
+                    self.layers[f"{i}_{j}"] = FromLastLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                    )
                 elif j == self.n_layers - 1:
-                    layer_kwargs.pop("num_heads")
-                    layer_kwargs.pop("set_layer")
-                    layer = ToLastLayer(**layer_kwargs)
+                    self.layers[f"{i}_{j}"] = ToLastLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                    )
                 else:
-                    layer = NonNeighborInternalLayer(**layer_kwargs)
+                    assert abs(i - j) > 1
+                    self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
+                        in_features=in_features,
+                        out_features=out_features,
+                        in_shape=shapes[i],
+                        out_shape=shapes[j],
+                        reduction=reduction,
+                        bias=bias,
+                        n_fc_layers=n_fc_layers,
+                    )
 
-            self.layers[f"{i}_{j}"] = layer
-    
     def forward(self, x: Tuple[torch.tensor]):
-        out_weights = [0.0 for _ in range(len(x))]
-        for i, j in itertools.product(range(self.n_layers), repeat=2):
-            out_weights[j] += self.layers[f"{i}_{j}"](x[i])
+        out_weights = [
+            0.0,
+        ] * len(x)
+        for i in range(self.n_layers):
+            for j in range(self.n_layers):
+                out_weights[j] = out_weights[j] + self.layers[f"{i}_{j}"](x[i])
         return tuple(out_weights)
 
 
