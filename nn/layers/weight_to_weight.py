@@ -215,7 +215,6 @@ class GeneralMatrixSetLayer(BaseLayer):
 
 
 from torch import nn
-
 class SetKroneckerSetLayer(nn.Module):
     def __init__(
         self,
@@ -242,15 +241,15 @@ class SetKroneckerSetLayer(nn.Module):
         out_all = self.lin_all(x)
         # rows
         pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        out_rows = self.lin_n(pooled_rows)
+        out_rows = self.lin_n(pooled_rows).expand_as(out_all)
         # cols
         pooled_cols = self._reduction(x, dim=2, keepdim=True)
-        out_cols = self.lin_m(pooled_cols)
+        out_cols = self.lin_m(pooled_cols).expand_as(out_all)
         # both
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         pooled_all = self._reduction(x, dim=2)
         pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
-        out_both = self.lin_both(pooled_all)
+        out_both = self.lin_both(pooled_all).expand_as(out_all)
 
         new_features = out_all.add_(out_rows).add_(out_cols).add_(out_both)
         new_features.mul_(0.25)
