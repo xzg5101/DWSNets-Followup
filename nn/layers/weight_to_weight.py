@@ -232,7 +232,7 @@ class SetKroneckerSetLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
             bias=bias,
         )
-        # todo: bias is overparametrized here. we can reduce the number of parameters
+
         self.d1, self.d2 = in_shape
         self.in_features = in_features
 
@@ -241,51 +241,20 @@ class SetKroneckerSetLayer(BaseLayer):
         self.lin_m = self._get_mlp(in_features, out_features, bias=bias)
         self.lin_both = self._get_mlp(in_features, out_features, bias=bias)
 
-        # todo: add attention support
-        # if reduction == "attn":
-        #     self.attn0 = Attn(self.d2 * self.in_features)
-        #     self.attn1 = Attn(self.d1 * self.in_features)
-        #     self.attn2 = Attn(self.in_features)
-
     def forward(self, x):
-        # x is [b, d1, d2, f]
-        shapes = x.shape
-        bs = shapes[0]
-        # all
-        out_all = self.lin_all(x)  # [b, d1, d2, f] -> [b, d1, d2, f']
-        # rows
-        pooled_rows = self._reduction(
-            x, dim=1, keepdim=True
-        )  # [b, d1, d2, f] -> [b, 1, d2, f]
-        out_rows = self.lin_n(pooled_rows)  # [b, 1, d2, f] -> [b, 1, d2, f']
-        # cols
-        pooled_cols = self._reduction(
-            x, dim=2, keepdim=True
-        )  # [b, d1, d2, f] -> [b, d1, 1, f]
-        out_cols = self.lin_m(pooled_cols)  # [b, d1, 1, f] -> [b, d1, 1, f']
-        # both
-        # todo: need to understand how we do this generic enough to move it into self._reduction.
-        #  I think we can just flatten (1, 2) and call it on the flat axis
-        # if self.reduction == "max":
-        #     pooled_all, _ = torch.max(
-        #         x.permute(0, 3, 1, 2).flatten(start_dim=2), dim=-1, keepdim=True
-        #     )
-        #     pooled_all = pooled_all.permute(0, 2, 1).unsqueeze(
-        #         1
-        #     )  # [b, d1, d2, f] -> [b, 1, 1, f]
-        # else:
-        # pooled_all = self._reduction(x, dim=(1, 2), keepdim=True)
-        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-        pooled_all = self._reduction(x, dim=2)
-        pooled_all = pooled_all.unsqueeze(1).unsqueeze(
-            1
-        )  # [b, d1, d2, f] -> [b, 1, 1, f]
+        bs, d1, d2, f = x.shape
 
-        out_both = self.lin_both(pooled_all)  # [b, 1, 1, f] -> [b, 1, 1, f']
+        out_all = self.lin_all(x)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True)
+        out_rows = self.lin_n(pooled_rows)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+        out_cols = self.lin_m(pooled_cols)
 
-        new_features = (
-            out_all + out_rows + out_cols + out_both
-        ) / 4.0  # [b, d1, d2, f']
+        x_flattened = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+        pooled_all = self._reduction(x_flattened, dim=2).unsqueeze(1).unsqueeze(1)
+        out_both = self.lin_both(pooled_all)
+
+        new_features = (out_all + out_rows + out_cols + out_both) / 4.0
         return new_features
 
 
