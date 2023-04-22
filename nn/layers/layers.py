@@ -397,17 +397,20 @@ class InvariantLayer(BaseLayer):
         )  # (bs, (num layers - 3) * in_features + d0 * in_features + dL * in_features + dL * in_features)
         return self.layer(pooled_all)
 
-from typing import List, Tuple
+
 class NaiveInvariantLayer(BaseLayer):
     def __init__(
         self,
-        weight_shapes: List[Tuple[int, int]],
-        bias_shapes: List[Tuple[int]],
-        in_features: int,
-        out_features: int,
-        bias: bool=True,
-        reduction: str="max",
-        n_fc_layers: int=1,
+        weight_shapes: Tuple[Tuple[int, int], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        in_features,
+        out_features,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
     ):
         super().__init__(
             in_features,
@@ -423,20 +426,19 @@ class NaiveInvariantLayer(BaseLayer):
             in_features=in_features * n_layers, out_features=out_features, bias=bias
         )
 
-    def forward(self, x: Tuple[List[torch.Tensor], List[torch.Tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        
         pooled_weights = torch.cat(
             [
                 self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
                 for w in weights
             ],
             dim=-1,
-        )
-
+        )  # (bs, len(weights) * in_features)
         pooled_biases = torch.cat(
             [self._reduction(b, dim=1) for b in biases], dim=-1
-        )
-
-        pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
+        )  # (bs, len(biases) * in_features)
+        pooled_all = torch.cat(
+            [pooled_weights, pooled_biases], dim=-1
+        )  # (bs, num layers * in_features)
         return self.layer(pooled_all)
