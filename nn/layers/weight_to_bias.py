@@ -216,38 +216,52 @@ class NonNeighborInternalLayer(BaseLayer):
         self.first_dim_is_output = first_dim_is_output
         self.last_dim_is_output = last_dim_is_output
 
-        if self.first_dim_is_input:
-            if self.last_dim_is_output:
-                in_features = self.in_features * in_shape[0]  # in_features * d0
-                out_features = self.out_features * out_shape[0]  # out_features * dL
-            else:
-                in_features = self.in_features * in_shape[0]  # in_features * d0
-        elif self.first_dim_is_output:
-            in_features = self.in_features * in_shape[-1]  # in_features * dL
-        elif self.last_dim_is_output:
-            out_features = self.out_features * out_shape[-1]  # out_features * dL
+        in_features, out_features = self.adjust_io_features(in_shape, out_shape)
 
-        self.layer = self._get_mlp(in_features=in_features, out_features=out_features, bias=bias)
+        self.layer = self._get_mlp(
+            in_features=in_features, out_features=out_features, bias=bias
+        )
+
+    def adjust_io_features(self, in_shape, out_shape):
+        if self.first_dim_is_input:
+            in_features = self.in_features * in_shape[0]
+            out_features = self.out_features * out_shape[0] if self.last_dim_is_output else self.out_features
+        elif self.first_dim_is_output:
+            in_features = self.in_features * in_shape[-1]
+            out_features = self.out_features
+        elif self.last_dim_is_output:
+            in_features = self.in_features
+            out_features = self.out_features * out_shape[-1]
+        else:
+            in_features = self.in_features
+            out_features = self.out_features
+
+        return in_features, out_features
 
     def forward(self, x):
-        if self.first_dim_is_input or self.first_dim_is_output:
-            dim = 2 if self.first_dim_is_input else 1
-            x = self._reduction(x, dim=dim)
+        if self.first_dim_is_input:
+            x = self._reduction(x, dim=2)
             x = x.flatten(start_dim=1)
             x = self.layer(x)
             if self.last_dim_is_output:
                 x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
             else:
-                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1)
-        else:
+                x = self.repeat_output(x)
+        elif self.first_dim_is_output or not self.last_dim_is_output:
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
             x = self._reduction(x, dim=2)
             x = self.layer(x)
-            if self.last_dim_is_output:
-                x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            else:
-                x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1)
+            x = self.repeat_output(x)
+        else:
+            x = self._reduction(x, dim=1)
+            x = x.flatten(start_dim=1)
+            x = self.layer(x)
+            x = self.repeat_output(x)
 
+        return x
+
+    def repeat_output(self, x):
+        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1)
         return x
 
 
