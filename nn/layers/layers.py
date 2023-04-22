@@ -218,23 +218,24 @@ class DownSampleDWSLayer(DWSLayer):
         self,
         downsample_dim: int,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int], ...],
-        in_features: int,
-        out_features: int,
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "sab",
-        add_skip: bool = False,
-        init_scale: float = 1.0,
-        init_off_diag_scale_penalty: float = 1.0,
+        bias_shapes: Tuple[Tuple[int,], ...],
+        in_features,
+        out_features,
+        bias=True,
+        reduction="max",
+        n_fc_layers=1,
+        num_heads=8,
+        set_layer="sab",
+        add_skip=False,
+        init_scale=1.0,
+        init_off_diag_scale_penalty=1.0,
     ):
         d0 = weight_shapes[0][0]
-        new_weight_shapes = ((downsample_dim, weight_shapes[0][1]),) + weight_shapes[1:]
+        new_weight_shapes = list(weight_shapes)
+        new_weight_shapes[0] = (downsample_dim, weight_shapes[0][1])
 
         super().__init__(
-            weight_shapes=new_weight_shapes,
+            weight_shapes=tuple(new_weight_shapes),
             bias_shapes=bias_shapes,
             in_features=in_features,
             out_features=out_features,
@@ -250,53 +251,55 @@ class DownSampleDWSLayer(DWSLayer):
 
         self.downsample_dim = downsample_dim
 
-        self.down_sample = GeneralSetLayer(
-            in_features=d0,
-            out_features=downsample_dim,
-            reduction="attn",
-            bias=bias,
-            n_fc_layers=n_fc_layers,
-            num_heads=num_heads,
-            set_layer="ds",
+        self.layers = nn.Sequential(
+            GeneralSetLayer(
+                in_features=d0,
+                out_features=downsample_dim,
+                reduction="attn",
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer="ds",
+            ),
+            GeneralSetLayer(
+                in_features=downsample_dim,
+                out_features=d0,
+                reduction="attn",
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer="ds",
+            ),
         )
 
-        self.up_sample = GeneralSetLayer(
-            in_features=downsample_dim,
-            out_features=d0,
-            reduction="attn",
-            bias=bias,
-            n_fc_layers=n_fc_layers,
-            num_heads=num_heads,
-            set_layer="ds",
-        )
-
-        self.skip = nn.ModuleList([self._get_mlp(
+        self.skip = self._get_mlp(
             in_features=in_features,
             out_features=out_features,
             bias=bias,
-        )])
+        )
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor, ...], Tuple[torch.Tensor, ...]]):
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
 
         # down-sample
         w0 = weights[0]
-        w0_skip = self.skip[0](w0)
-        bs, d0, d1, _ = w0.shape
-        w0 = w0.permute(0, 3, 2, 1)
-        w0 = self.down_sample(w0)
-        w0 = w0.permute(0, 3, 2, 1)
-        weights = (w0,) + weights[1:]
+        w0_skip = self.skip(w0)
+        w0 = rearrange(w0, 'bs d0 d1 if -> bs if d1 d0')
+        w0 = self.layers[0](w0)
+        w0 = rearrange(w0, 'bs if d1 dsd -> bs dsd d1 if')
+        weights = list(weights)
+        weights[0] = w0
 
         # cannibal layer out
-        weights, biases = super().forward((weights, biases))
+        weights, biases = super().forward((tuple(weights), biases))
 
         # up-sample
         w0 = weights[0]
-        w0 = w0.permute(0, 3, 2, 1)
-        w0 = self.up_sample(w0)
-        w0 = w0.permute(0, 3, 2, 1)
-        weights = (w0 + w0_skip,) + weights[1:]
+        w0 = rearrange(w0, 'bs dsd d1 of -> bs of d1 dsd')
+        w0 = self.layers[1](w0)
+        w0 = rearrange(w0, 'bs of d1 d0 -> bs d0 d1 of')
+        weights = list(weights)
+        weights[0] = w0.add_(w0_skip)  # add skip connection (in-place addition)
 
         return weights, biases
 
