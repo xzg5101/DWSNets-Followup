@@ -82,22 +82,21 @@ class SameLayer(BaseLayer):
 
         return x
 
-import torch.nn.functional as F
 class SuccessiveLayers(BaseLayer):
     """Mapping Wi -> bj where i=j+1"""
 
     def __init__(
         self,
-        in_features,
-        out_features,
-        in_shape,
-        out_shape,
+        in_features: int,
+        out_features: int,
+        in_shape: int,
+        out_shape: int,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
         num_heads: int = 8,
         set_layer: str = "sab",
-        first_dim_is_output=False,
+        first_dim_is_output: bool = False,
     ):
         """
         :param in_features: input feature dim
@@ -111,6 +110,9 @@ class SuccessiveLayers(BaseLayer):
         :param set_layer:
         :param first_dim_is_output: first dim (i) is the output layer for the INR (i=L-1)
         """
+        self.first_dim_is_output = first_dim_is_output
+        in_features, out_features = self.adjust_features(in_features, out_features, in_shape, first_dim_is_output)
+
         super().__init__(
             in_features,
             out_features,
@@ -122,10 +124,6 @@ class SuccessiveLayers(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-        self.first_dim_is_output = first_dim_is_output
-
-        if self.first_dim_is_output:
-            in_features *= in_shape[-1]
 
         self.layer = GeneralSetLayer(
             in_features=in_features,
@@ -137,13 +135,19 @@ class SuccessiveLayers(BaseLayer):
             set_layer=set_layer,
         )
 
+    def adjust_features(self, in_features: int, out_features: int, in_shape: int, first_dim_is_output: bool) -> tuple[int, int]:
+        if first_dim_is_output:
+            in_features = in_features * in_shape[-1]
+        return in_features, out_features
+
     def forward(self, x):
         if self.first_dim_is_output:
             x = x.flatten(start_dim=2)
         else:
-            x = torch.max(x, dim=2).values if self.reduction == "max" else torch.mean(x, dim=2)
+            x = self._reduction(x, dim=2)
 
-        return self.layer(x)
+        x = self.layer(x)
+        return x
 
 
 class NonNeighborInternalLayer(BaseLayer):
