@@ -359,6 +359,14 @@ class WeightToBiasBlock(BaseLayer):
         self.bias_shapes = bias_shapes
         self.n_layers = len(bias_shapes)
 
+        self.in_features = in_features
+        self.out_features = out_features
+        self.reduction = reduction
+        self.bias = bias
+        self.n_fc_layers = n_fc_layers
+        self.num_heads = num_heads
+        self.set_layer = set_layer
+
         self.layers = ModuleDict()
         for i in range(self.n_layers):
             for j in range(self.n_layers):
