@@ -218,7 +218,10 @@ class DownSampleDWSLayer(DWSLayer):
         self,
         downsample_dim: int,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int,], ...],
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
         in_features,
         out_features,
         bias=True,
@@ -251,25 +254,24 @@ class DownSampleDWSLayer(DWSLayer):
 
         self.downsample_dim = downsample_dim
 
-        self.layers = nn.Sequential(
-            GeneralSetLayer(
-                in_features=d0,
-                out_features=downsample_dim,
-                reduction="attn",
-                bias=bias,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer="ds",
-            ),
-            GeneralSetLayer(
-                in_features=downsample_dim,
-                out_features=d0,
-                reduction="attn",
-                bias=bias,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer="ds",
-            ),
+        self.down_sample = GeneralSetLayer(
+            in_features=d0,
+            out_features=downsample_dim,
+            reduction="attn",
+            bias=bias,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer="ds",
+        )
+
+        self.up_sample = GeneralSetLayer(
+            in_features=downsample_dim,
+            out_features=d0,
+            reduction="attn",
+            bias=bias,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer="ds",
         )
 
         self.skip = self._get_mlp(
@@ -282,11 +284,16 @@ class DownSampleDWSLayer(DWSLayer):
         weights, biases = x
 
         # down-sample
+        # (bs, d0, d1, in_features)
         w0 = weights[0]
         w0_skip = self.skip(w0)
-        w0 = rearrange(w0, 'bs d0 d1 if -> bs if d1 d0')
-        w0 = self.layers[0](w0)
-        w0 = rearrange(w0, 'bs if d1 dsd -> bs dsd d1 if')
+        bs, d0, d1, _ = w0.shape
+        # (bs, in_features, d1, d0)
+        w0 = w0.permute(0, 3, 2, 1)
+        # (bs, in_features, d1, downsample_dim)
+        w0 = self.down_sample(w0)
+        # (bs, downsample_dim, d1, in_features)
+        w0 = w0.permute(0, 3, 2, 1)
         weights = list(weights)
         weights[0] = w0
 
@@ -295,11 +302,14 @@ class DownSampleDWSLayer(DWSLayer):
 
         # up-sample
         w0 = weights[0]
-        w0 = rearrange(w0, 'bs dsd d1 of -> bs of d1 dsd')
-        w0 = self.layers[1](w0)
-        w0 = rearrange(w0, 'bs of d1 d0 -> bs d0 d1 of')
+        # (bs, out_features, d1, downsample_dim)
+        w0 = w0.permute(0, 3, 2, 1)
+        # (bs, out_features, d1, d0)
+        w0 = self.up_sample(w0)
+        # (bs, d0, d1, out_features)
+        w0 = w0.permute(0, 3, 2, 1)
         weights = list(weights)
-        weights[0] = w0.add_(w0_skip)  # add skip connection (in-place addition)
+        weights[0] = w0 + w0_skip  # add skip connection
 
         return weights, biases
 
@@ -308,10 +318,7 @@ class InvariantLayer(BaseLayer):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[
-            Tuple[int,],
-            ...,
-        ],
+        bias_shapes: Tuple[Tuple[int,], ...],
         in_features,
         out_features,
         bias=True,
@@ -328,63 +335,32 @@ class InvariantLayer(BaseLayer):
         self.weight_shapes = weight_shapes
         self.bias_shapes = bias_shapes
         n_layers = len(weight_shapes) + len(bias_shapes)
-        self.layer = self._get_mlp(
-            in_features=(
-                in_features * (n_layers - 3)
-                +
-                # in_features * d0 - first weight matrix
-                in_features * weight_shapes[0][0]
-                +
-                # in_features * dL - last weight matrix
-                in_features * weight_shapes[-1][-1]
-                +
-                # in_features * dL - last bias
-                in_features * bias_shapes[-1][-1]
-            ),
-            out_features=out_features,
-            bias=bias,
-        )
+        in_features_extended = in_features * (n_layers - 3 + weight_shapes[0][0] + weight_shapes[-1][-1] + bias_shapes[-1][-1])
+        
+        self.layer = self._get_mlp(in_features=in_features_extended, out_features=out_features, bias=bias)
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
-        # first and last matrices are special
         first_w, last_w = weights[0], weights[-1]
-        # first w is of shape (bs, d0, d1, in_features)
-        # (bs, d1, d0 * in_features)
-        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
-        # (bs, d{L-1}, dL * in_features)
+
+        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(sstart_dim=2)
         pooled_last_w = last_w.flatten(start_dim=2)
-        # (bs, d0 * in_features)
         pooled_first_w = self._reduction(pooled_first_w, dim=1)
-        # (bs, dL * in_features)
         pooled_last_w = self._reduction(pooled_last_w, dim=1)
-        # last bias is special
+
         last_b = biases[-1]
-        # (bs, dL * in_features)
         pooled_last_b = last_b.flatten(start_dim=1)
 
-        # concat
         pooled_weights = torch.cat(
-            [
-                self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
-                for w in weights[1:-1]
-            ],
+            [self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2) for w in weights[1:-1]],
             dim=-1,
-        )  # (bs, (len(weights) - 2) * in_features)
-        # (bs, (len(weights) - 2) * in_features + d0 * in_features + dL * in_features)
-        pooled_weights = torch.cat(
-            (pooled_weights, pooled_first_w, pooled_last_w), dim=-1
         )
+        pooled_weights = torch.cat((pooled_weights, pooled_first_w, pooled_last_w), dim=-1)
 
-        pooled_biases = torch.cat(
-            [self._reduction(b, dim=1) for b in biases[:-1]], dim=-1
-        )  # (bs, (len(biases) - 1) * in_features)
-        # (bs, (len(biases) - 1) * in_features + dL * in_features)
+        pooled_biases = torch.cat([self._reduction(b, dim=1) for b in biases[:-1]], dim=-1)
         pooled_biases = torch.cat((pooled_biases, pooled_last_b), dim=-1)
 
-        pooled_all = torch.cat(
-            [pooled_weights, pooled_biases], dim=-1
-        )  # (bs, (num layers - 3) * in_features + d0 * in_features + dL * in_features + dL * in_features)
+        pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
         return self.layer(pooled_all)
 
 
