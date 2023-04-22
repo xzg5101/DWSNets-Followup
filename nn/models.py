@@ -54,29 +54,19 @@ class MLPModelForClassification(nn.Module):
         super().__init__()
         layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
         for _ in range(n_hidden):
-            if not bn:
-                layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
-            else:
-                layers.extend(
-                    [
-                        nn.Linear(hidden_dim, hidden_dim),
-                        nn.BatchNorm1d(hidden_dim),
-                        nn.ReLU(),
-                    ]
-                )
+            layers.append(nn.Linear(hidden_dim, hidden_dim))
+            if bn:
+                layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.ReLU())
 
         layers.append(nn.Linear(hidden_dim, n_classes))
-        self.layers = nn.ModuleList(layers)
+        self.seq = nn.Sequential(*layers)
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> torch.Tensor:
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weight, bias = x
         all_weights = weight + bias
-        weight = torch.cat([w.flatten(start_dim=1) for w in all_weights], dim=-1)
-        
-        x = weight
-        for layer in self.layers:
-            x = layer(x)
-        return x
+        weight = torch.cat([w.view(-1) for w in all_weights], dim=-1)
+        return self.seq(weight)
 
 
 class DWSModel(nn.Module):
