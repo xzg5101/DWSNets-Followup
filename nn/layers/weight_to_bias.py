@@ -36,19 +36,15 @@ class SameLayer(BaseLayer):
         self.is_input_layer = is_input_layer
         assert not (is_input_layer and is_output_layer)
 
-        layer_args = {
-            "reduction": reduction,
-            "bias": bias,
-            "n_fc_layers": n_fc_layers,
-            "num_heads": num_heads,
-            "set_layer": set_layer,
-        }
-
         if self.is_input_layer:
             self.layer = GeneralSetLayer(
                 in_features=in_features * in_shape[0],
                 out_features=out_features,
-                **layer_args,
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             )
         elif self.is_output_layer:
             self.layer = self._get_mlp(
@@ -60,21 +56,32 @@ class SameLayer(BaseLayer):
             self.layer = GeneralSetLayer(
                 in_features=in_features,
                 out_features=out_features,
-                **layer_args,
+                reduction=reduction,
+                bias=bias,
+                n_fc_layers=n_fc_layers,
+                num_heads=num_heads,
+                set_layer=set_layer,
             )
 
+        self.bs = None
+        self.out_shape_0 = self.out_shape[0]
+
     def forward(self, x):
+        self.bs = x.shape[0]
+
         if self.is_input_layer:
-            x = x.permute(0, 2, 1, 3).flatten(start_dim=2)
+            x = x.permute(0, 2, 1, 3).contiguous().view(self.bs, -1, self.in_features)
+            x = self.layer(x)
+
         elif self.is_output_layer:
-            x = self._reduction(x, dim=1).flatten(start_dim=1)
+            x = self._reduction(x, dim=1)
+            x = x.contiguous().view(self.bs, -1)
+            x = self.layer(x)
+            x = x.view(self.bs, self.out_shape_0, self.out_features)
+
         else:
             x = self._reduction(x, dim=1)
-
-        x = self.layer(x)
-
-        if self.is_output_layer:
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+            x = self.layer(x)
 
         return x
 
