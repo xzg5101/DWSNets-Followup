@@ -381,14 +381,13 @@ class ToFirstLayer(BaseLayer):
         first_dim_is_output=False,
     ):
         """
-
         :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
+        :param out_features: output feature dim
+        :param in_shape: input shape
+        :param out_shape: output shape
+        :param bias: whether to include bias in the linear layers
+        :param reduction: reduction method for the input tensor
+        :param n_fc_layers: number of fully connected layers
         """
         super().__init__(
             in_features,
@@ -401,42 +400,22 @@ class ToFirstLayer(BaseLayer):
         )
         self.first_dim_is_output = first_dim_is_output
 
-        if self.first_dim_is_output:
-            # i=L-1, j=0
-            in_features = self.in_features * self.in_shape[-1]  # dL * in_features
-            out_features = self.out_features * self.out_shape[0]  # d0 * out_features
-            self.layer = self._get_mlp(in_features, out_features, bias=bias)
+        in_features = self.in_features * (self.in_shape[-1] if first_dim_is_output else 1)
+        out_features = self.out_features * self.out_shape[0]
 
-        else:
-            # i!=L-1, j=0
-            in_features = self.in_features  # in_features
-            out_features = self.out_features * self.out_shape[0]  # d0 * out_features
-            self.layer = self._get_mlp(in_features, out_features, bias=bias)
+        self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
     def forward(self, x):
         if self.first_dim_is_output:
-            # i=L-1, j=0
-            # (bs, d{L-1}, dL, in_features)
-            # (bs, dL, in_features)
             x = self._reduction(x, dim=1)
-            # (bs, d0 * out_features)
-            x = self.layer(x.flatten(start_dim=1))
-            # (bs, d0, out_features)
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            # (bs, d0, d1, out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         else:
-            # (bs, dj, d{j+1}, in_features)
-            # (bs, in_features, dj * d{j+1})
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-            # (bs, in_features)
             x = self._reduction(x, dim=2)
-            # (bs, d0 * out_features)
-            x = self.layer(x.flatten(start_dim=1))
-            # (bs, d0, out_features)
-            x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-            # (bs, d0, d1, out_features)
-            x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
+
+        x = self.layer(x.flatten(start_dim=1))
+        x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
+        x = torch.cat([x.unsqueeze(2)] * self.out_shape[-1], dim=2)
+
         return x
 
 
