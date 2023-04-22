@@ -213,7 +213,7 @@ class GeneralMatrixSetLayer(BaseLayer):
 
         return x
 
-from torch import nn
+
 class SetKroneckerSetLayer(BaseLayer):
     def __init__(
         self,
@@ -232,10 +232,20 @@ class SetKroneckerSetLayer(BaseLayer):
             n_fc_layers=n_fc_layers,
             bias=bias,
         )
+        # todo: bias is overparametrized here. we can reduce the number of parameters
         self.d1, self.d2 = in_shape
         self.in_features = in_features
 
-        self.lin_layers = nn.ModuleList([self._get_mlp(in_features, out_features, bias=bias) for _ in range(4)])
+        self.lin_all = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_n = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_m = self._get_mlp(in_features, out_features, bias=bias)
+        self.lin_both = self._get_mlp(in_features, out_features, bias=bias)
+
+        # todo: add attention support
+        # if reduction == "attn":
+        #     self.attn0 = Attn(self.d2 * self.in_features)
+        #     self.attn1 = Attn(self.d1 * self.in_features)
+        #     self.attn2 = Attn(self.in_features)
 
     def forward(self, x):
         shapes = x.shape
@@ -253,6 +263,7 @@ class SetKroneckerSetLayer(BaseLayer):
         out_sum = out_all + out_rows.expand_as(out_all) + out_cols.expand_as(out_all) + out_both.expand_as(out_all)
         out_sum.div_(4.0)
         return out_sum
+
 
 class FromFirstLayer(BaseLayer):
     """Mapping W_0 -> W_j where j != 1"""
