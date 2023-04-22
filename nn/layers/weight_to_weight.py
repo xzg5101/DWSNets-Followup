@@ -367,8 +367,6 @@ class FromFirstLayer(BaseLayer):
 
 
 class ToFirstLayer(BaseLayer):
-    """Mapping W_i -> W_0 where i != 1"""
-
     def __init__(
         self,
         in_features,
@@ -392,25 +390,21 @@ class ToFirstLayer(BaseLayer):
         self.first_dim_is_output = first_dim_is_output
 
         if self.first_dim_is_output:
-            in_features = self.in_features * self.in_shape[-1]
-            out_features = self.out_features * self.out_shape[0]
-        else:
-            in_features = self.in_features
-            out_features = self.out_features * self.out_shape[0]
-
+            in_features *= self.in_shape[-1]
+        out_features *= self.out_shape[0]
         self.layer = self._get_mlp(in_features, out_features, bias=bias)
 
     def forward(self, x):
         if self.first_dim_is_output:
             x = self._reduction(x, dim=1)
+            x = self.layer(x.flatten(start_dim=1))
         else:
             x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
             x = self._reduction(x, dim=2)
+            x = self.layer(x.flatten(start_dim=1))
 
-        x = self.layer(x.flatten(start_dim=1))
         x = x.reshape(x.shape[0], self.out_shape[0], self.out_features)
-        x = x.unsqueeze(2).repeat_interleave(self.out_shape[-1], dim=2)
-
+        x = x.unsqueeze(2).repeat(1, 1, self.out_shape[-1], 1)
         return x
 
 
