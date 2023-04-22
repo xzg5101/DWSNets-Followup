@@ -660,15 +660,19 @@ class WeightToWeightBlock(BaseLayer):
             else:
                 if i == 0:
                     layer_kwargs.pop("num_heads")
+                    layer_kwargs.pop("set_layer")
                     layer = FromFirstLayer(**layer_kwargs, last_dim_is_output=last_dim_is_output)
                 elif j == 0:
                     layer_kwargs.pop("num_heads")
+                    layer_kwargs.pop("set_layer")
                     layer = ToFirstLayer(**layer_kwargs, first_dim_is_output=first_dim_is_output)
                 elif i == self.n_layers - 1:
                     layer_kwargs.pop("num_heads")
+                    layer_kwargs.pop("set_layer")
                     layer = FromLastLayer(**layer_kwargs)
                 elif j == self.n_layers - 1:
                     layer_kwargs.pop("num_heads")
+                    layer_kwargs.pop("set_layer")
                     layer = ToLastLayer(**layer_kwargs)
                 else:
                     layer = NonNeighborInternalLayer(**layer_kwargs)
