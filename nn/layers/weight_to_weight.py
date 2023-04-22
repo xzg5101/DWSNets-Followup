@@ -542,15 +542,16 @@ class ToLastLayer(BaseLayer):
         return x
 
 
-import torch.nn as nn
 
 class NonNeighborInternalLayer(BaseLayer):
+    """Mapping W_i -> W_j where i,j != 0, L-2 and |i-j|>1"""
+
     def __init__(
         self,
-        in_features,
-        out_features,
-        in_shape,
-        out_shape,
+        in_features: int,
+        out_features: int,
+        in_shape: Tuple[int, int],
+        out_shape: Tuple[int, int],
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
@@ -572,10 +573,10 @@ class NonNeighborInternalLayer(BaseLayer):
         )
 
     def forward(self, x):
-        x = x.reshape(x.size(0), self.in_features, -1)
+        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         x = self._reduction(x, dim=2)
         x = self.layer(x)
-        x = x.unsqueeze(1).unsqueeze(1).expand(-1, *self.out_shape, -1)
+        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
         return x
 
 
