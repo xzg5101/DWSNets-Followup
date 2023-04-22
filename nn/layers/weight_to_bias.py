@@ -82,7 +82,7 @@ class SameLayer(BaseLayer):
 
         return x
 
-
+import torch.nn.functional as F
 class SuccessiveLayers(BaseLayer):
     """Mapping Wi -> bj where i=j+1"""
 
@@ -99,6 +99,18 @@ class SuccessiveLayers(BaseLayer):
         set_layer: str = "sab",
         first_dim_is_output=False,
     ):
+        """
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        :param num_heads:
+        :param set_layer:
+        :param first_dim_is_output: first dim (i) is the output layer for the INR (i=L-1)
+        """
         super().__init__(
             in_features,
             out_features,
@@ -110,8 +122,8 @@ class SuccessiveLayers(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
-
         self.first_dim_is_output = first_dim_is_output
+
         if self.first_dim_is_output:
             in_features *= in_shape[-1]
 
@@ -129,7 +141,7 @@ class SuccessiveLayers(BaseLayer):
         if self.first_dim_is_output:
             x = x.flatten(start_dim=2)
         else:
-            x = self._reduction(x, dim=2)
+            x = F.max(x, dim=2).values if self.reduction == "max" else F.mean(x, dim=2)
 
         return self.layer(x)
 
