@@ -494,54 +494,6 @@ class ToLastLayer(BaseLayer):
 
     def __init__(
         self,
-        in_features: int,
-        out_features: int,
-        in_shape: Tuple[int, int],
-        out_shape: Tuple[int, int],
-        bias: bool = True,
-        reduction: str = "max",
-        n_fc_layers: int = 1,
-    ):
-        """
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        """
-        super().__init__(
-            in_features,
-            out_features,
-            in_shape=in_shape,
-            out_shape=out_shape,
-            bias=bias,
-            reduction=reduction,
-            n_fc_layers=n_fc_layers,
-        )
-        self.layer = self._get_mlp(
-            in_features=in_features,
-            out_features=out_features * self.out_shape[-1],
-            bias=bias,
-        )
-
-    def forward(self, x):
-        batch_size = x.shape[0]
-        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
-        x = self._reduction(x, dim=2)
-        x = self.layer(x)
-
-        out_shape_last_dim = self.out_shape[-1]
-        x = x.reshape(batch_size, out_shape_last_dim, self.out_features)
-        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
-        return x
-
-class NonNeighborInternalLayer(BaseLayer):
-    """Mapping W_i -> W_j where i,j != 0, L-2 and |i-j|>1"""
-
-    def __init__(
-        self,
         in_features,
         out_features,
         in_shape,
@@ -569,11 +521,67 @@ class NonNeighborInternalLayer(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
         )
-
         self.layer = self._get_mlp(
-            in_features=in_features,
-            out_features=out_features,
+            in_features=in_features,  # dL * in_features
+            out_features=out_features * self.out_shape[-1],  # out_features * dL
             bias=bias,
+        )
+
+    def forward(self, x):
+        # (bs, di, d{i+1}, in_features)
+        # (bs, in_features, di * d{i+1})
+        x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
+        # (bs, in_features)
+        x = self._reduction(x, dim=2)
+        # (bs, dL * out_features)
+        x = self.layer(x)
+        # (bs, dL, out_features)
+        x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
+        # (bs, d{L-1}, dL, out_features)
+        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+        return x
+
+
+class NonNeighborInternalLayer(BaseLayer):
+    """Mapping W_i -> W_j where i, j != 0, L-2 and |i-j| > 1"""
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        in_shape: Tuple[int, int],
+        out_shape: Tuple[int, int],
+        bias: bool = True,
+        reduction: str = "max",
+        n_fc_layers: int = 1,
+    ) -> None:
+        """
+        Initialize NonNeighborInternalLayer instance.
+
+        :param in_features: input feature dim
+        :param out_features: output feature dim
+        :param in_shape: input shape
+        :param out_shape: output shape
+        :param bias: use bias in linear layers, default is True
+        :param reduction: reduction method, default is 'max'
+        :param n_fc_layers: number of fully connected layers, default is 1
+        """
+        super().__init__(
+            in_features,
+            out_features,
+            in_shape=in_shape,
+            out_shape=out_shape,
+            bias=bias,
+            reduction=reduction,
+            n_fc_layers=n_fc_layers,
+        )
+
+    @property
+    def layer(self):
+        return self._get_mlp(
+            in_features=self.in_features,
+            out_features=self.out_features,
+            bias=self.bias,
         )
 
     def forward(self, x):
