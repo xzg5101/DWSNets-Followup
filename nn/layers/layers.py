@@ -354,7 +354,7 @@ class InvariantLayer(BaseLayer):
         first_w, last_w = weights[0], weights[-1]
         
         pooled_first_w = self._pool_and_flatten(first_w, (0, 2, 1, 3))
-        pooled_last_w = self._pool_and_flatten(last_w, (0, 1, 2))
+        pooled_last_w = self._pool_and_flatten(last_w)
 
         last_b = biases[-1]
         pooled_last_b = last_b.flatten(start_dim=1)
@@ -372,7 +372,7 @@ class InvariantLayer(BaseLayer):
         if permute_dims is not None:
             tensor = tensor.permute(*permute_dims)
 
-        flattened_tensor = tensor.flatten(start_dim=2)
+        flattened_tensor = tensor.flatten(start_dim=-2)
         return self._reduction(flattened_tensor, dim=1)
 
     def _pool_weights_except_first_and_last(self, weights):
