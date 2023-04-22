@@ -313,7 +313,6 @@ class DownSampleDWSLayer(DWSLayer):
 
         return weights, biases
 
-from einops import rearrange
 class InvariantLayer(BaseLayer):
     def __init__(
         self,
@@ -339,27 +338,40 @@ class InvariantLayer(BaseLayer):
         self.bias_shapes = bias_shapes
         n_layers = len(weight_shapes) + len(bias_shapes)
         self.layer = self._get_mlp(
-            in_features=in_features * (n_layers - 3) + in_features * (weight_shapes[0][0] + weight_shapes[-1][-1] + bias_shapes[-1][-1]),
+            in_features=(
+                in_features * (n_layers - 3)
+                +
+                in_features * weight_shapes[0][0]
+                +
+                in_features * weight_shapes[-1][-1]
+                +
+                in_features * bias_shapes[-1][-1]
+            ),
             out_features=out_features,
             bias=bias,
         )
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
+        first_w, last_w = weights[0], weights[-1]
+        pooled_first_w = first_w.permute(0, 2, 1, 3).flatten(start_dim=2)
+        pooled_last_w = last_w.flatten(start_dim=2)
+        pooled_first_w = self._reduction(pooled_first_w, dim=1)
+        pooled_last_w = self._reduction(pooled_last_w, dim=1)
+        last_b = biases[-1]
+        pooled_last_b = last_b.flatten(start_dim=1)
 
-        pooled_first_w = self._reduction(rearrange(weights[0], 'b d0 d1 f -> b (d0 f)'), dim=1)
-        pooled_last_w = self._reduction(rearrange(weights[-1], 'b dL1 dL f -> b (dL f)'), dim=1)
-        pooled_last_b = rearrange(biases[-1], 'b dL f -> b (dL f)')
+        pooled_weights = torch.cat([
+            self._reduction(w.permute(0, 3, 1, 2).flatten(start_dim=2), dim=2)
+            for w in weights[1:-1]
+        ] + [pooled_first_w, pooled_last_w], dim=-1)
 
-        pooled_weights_middle = torch.cat([self._reduction(rearrange(w, 'b dL1 dL f -> b (dL1 f)'), dim=1) for w in weights[1:-1]], dim=-1)
-        pooled_weights = torch.cat((pooled_weights_middle, pooled_first_w, pooled_last_w), dim=-1)
-
-        pooled_biases_except_last = torch.cat([self._reduction(b, dim=1) for b in biases[:-1]], dim=-1)
-        pooled_biases = torch.cat((pooled_biases_except_last, pooled_last_b), dim=-1)
+        pooled_biases = torch.cat(
+            [self._reduction(b, dim=1) for b in biases[:-1]] + [pooled_last_b], dim=-1
+        )
 
         pooled_all = torch.cat([pooled_weights, pooled_biases], dim=-1)
         return self.layer(pooled_all)
-
 
 
 class NaiveInvariantLayer(BaseLayer):
