@@ -5,50 +5,45 @@ from torch import nn
 
 from nn.layers import BN, DownSampleDWSLayer, Dropout, DWSLayer, InvariantLayer, ReLU
 
-
 class MLPModel(nn.Module):
     def __init__(self, in_dim=2208, hidden_dim=256, n_hidden=2, bn=False, init_scale=1):
         super().__init__()
-        layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
-        for i in range(n_hidden):
-            if i < n_hidden - 1:
-                if not bn:
-                    layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
-                else:
-                    layers.extend(
-                        [
-                            nn.Linear(hidden_dim, hidden_dim),
-                            nn.BatchNorm1d(hidden_dim),
-                            nn.ReLU(),
-                        ]
-                    )
-            else:
-                layers.append(nn.Linear(hidden_dim, in_dim))
-        # # todo: this model have one extra layer compare with the other alternatives for model-to-model
-        # layers.append(nn.Linear(hidden_dim, in_dim))
-        self.seq = nn.Sequential(*layers)
 
+        # Create layers using list comprehensions
+        hidden_layers = [nn.Linear(hidden_dim, hidden_dim) for _ in range(n_hidden - 1)]
+        activation_layers = [nn.ReLU() for _ in range(n_hidden - 1)]
+
+        if bn:
+            bn_layers = [nn.BatchNorm1d(hidden_dim) for _ in range(n_hidden - 1)]
+            layers = [
+                nn.Linear(in_dim, hidden_dim),
+                nn.ReLU(),
+                *sum(zip(hidden_layers, bn_layers, activation_layers), ()),
+                nn.Linear(hidden_dim, in_dim)
+            ]
+        else:
+            layers = [
+                nn.Linear(in_dim, hidden_dim),
+                nn.ReLU(),
+                *sum(zip(hidden_layers, activation_layers), ()),
+                nn.Linear(hidden_dim, in_dim)
+            ]
+
+        self.seq = nn.ModuleList(layers)
         self._init_model_params(init_scale)
 
     def _init_model_params(self, scale):
         for n, m in self.named_modules():
             if isinstance(m, nn.Linear):
-                out_c, in_c = m.weight.shape
-                g = (2 * in_c / out_c) ** 0.5
-                # nn.init.xavier_normal_(m.weight, gain=g)
                 nn.init.xavier_normal_(m.weight)
-                # nn.init.kaiming_normal_(m.weight)
-                m.weight.data = m.weight.data * g * scale
+                m.weight.data *= scale
                 if m.bias is not None:
-                    # m.bias.data.fill_(0.0)
                     m.bias.data.uniform_(-1e-4, 1e-4)
 
-    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weight, bias = x
         bs = weight[0].shape[0]
-        weight_shape, bias_shape = [w[0, :].shape for w in weight], [
-            b[0, :].shape for b in bias
-        ]
+        weight_shape, bias_shape = [w[0, :].shape for w in weight], [b[0, :].shape for b in bias]
         all_weights = weight + bias
         weight = torch.cat([w.flatten(start_dim=1) for w in all_weights], dim=-1)
         weights_and_biases = self.seq(weight)
@@ -58,11 +53,11 @@ class MLPModel(nn.Module):
         weight, bias = [], []
         w_index = 0
         for s in weight_shape:
-            weight.append(weights[:, w_index : w_index + s.numel()].reshape(bs, *s))
+            weight.append(weights[:, w_index: w_index + s.numel()].reshape(bs, *s))
             w_index += s.numel()
         w_index = 0
         for s in bias_shape:
-            bias.append(biases[:, w_index : w_index + s.numel()].reshape(bs, *s))
+            bias.append(biases[:, w_index: w_index + s.numel()].reshape(bs, *s))
             w_index += s.numel()
         return tuple(weight), tuple(bias)
 
