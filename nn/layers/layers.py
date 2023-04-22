@@ -347,11 +347,11 @@ class InvariantLayer(BaseLayer):
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weights, biases = x
 
-        pooled_first_w = self._reduction(rearrange(weights[0], 'b d0 d1 f -> b (d0 d1 f)'), dim=1)
-        pooled_last_w = self._reduction(rearrange(weights[-1], 'b dL1 dL f -> b (dL1 dL f)'), dim=1)
+        pooled_first_w = self._reduction(rearrange(weights[0], 'b d0 d1 f -> b (d0 f)'), dim=1)
+        pooled_last_w = self._reduction(rearrange(weights[-1], 'b dL1 dL f -> b (dL f)'), dim=1)
         pooled_last_b = rearrange(biases[-1], 'b dL f -> b (dL f)')
 
-        pooled_weights_middle = torch.cat([self._reduction(rearrange(w, 'b dL1 dL f -> b (dL1 dL f)'), dim=2) for w in weights[1:-1]], dim=-1)
+        pooled_weights_middle = torch.cat([self._reduction(rearrange(w, 'b dL1 dL f -> b (dL1 f)'), dim=1) for w in weights[1:-1]], dim=-1)
         pooled_weights = torch.cat((pooled_weights_middle, pooled_first_w, pooled_last_w), dim=-1)
 
         pooled_biases_except_last = torch.cat([self._reduction(b, dim=1) for b in biases[:-1]], dim=-1)
