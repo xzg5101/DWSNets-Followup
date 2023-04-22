@@ -659,17 +659,22 @@ class WeightToWeightBlock(BaseLayer):
                     layer = GeneralMatrixSetLayer(**layer_kwargs)
             else:
                 if i == 0:
+                    layer_kwargs.pop("num_heads")
                     layer = FromFirstLayer(**layer_kwargs, last_dim_is_output=last_dim_is_output)
                 elif j == 0:
+                    layer_kwargs.pop("num_heads")
                     layer = ToFirstLayer(**layer_kwargs, first_dim_is_output=first_dim_is_output)
                 elif i == self.n_layers - 1:
+                    layer_kwargs.pop("num_heads")
                     layer = FromLastLayer(**layer_kwargs)
                 elif j == self.n_layers - 1:
+                    layer_kwargs.pop("num_heads")
                     layer = ToLastLayer(**layer_kwargs)
                 else:
                     layer = NonNeighborInternalLayer(**layer_kwargs)
 
             self.layers[f"{i}_{j}"] = layer
+    
     def forward(self, x: Tuple[torch.tensor]):
         out_weights = [0.0 for _ in range(len(x))]
         for i, j in itertools.product(range(self.n_layers), repeat=2):
