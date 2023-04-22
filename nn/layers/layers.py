@@ -313,7 +313,7 @@ class DownSampleDWSLayer(DWSLayer):
 
         return weights, biases
 
-
+from einops import rearrange
 class InvariantLayer(BaseLayer):
     def __init__(
         self,
