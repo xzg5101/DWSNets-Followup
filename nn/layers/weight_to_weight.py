@@ -240,23 +240,19 @@ class SetKroneckerSetLayer(BaseLayer):
     def forward(self, x):
         shapes = x.shape
         bs = shapes[0]
-
-        out_all = self.lin_layers[0](x.view(bs, self.d1, self.d2, self.in_features))
-        
+        out_all = self.lin_all(x)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True)
+        out_rows = self.lin_n(pooled_rows)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+        out_cols = self.lin_m(pooled_cols)
         x = x.permute(0, 3, 1, 2).flatten(start_dim=2)
         pooled_all = self._reduction(x, dim=2)
         pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
+        out_both = self.lin_both(pooled_all)
 
-        pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        pooled_rows = pooled_rows.view(bs, 1, self.d2, -1)
-        pooled_cols = self._reduction(x, dim=2, keepdim=True).view(bs, self.d1, 1, self.in_features)
-
-        out_rows = self.lin_layers[1](pooled_rows)
-        out_cols = self.lin_layers[2](pooled_cols)
-        out_both = self.lin_layers[3](pooled_all.view(bs, 1, 1, self.in_features))
-
-        new_features = out_all * 0.25 + out_rows * 0.25 + out_cols * 0.25 + out_both * 0.25
-        return new_features
+        out_sum = out_all + out_rows.expand_as(out_all) + out_cols.expand_as(out_all) + out_both.expand_as(out_all)
+        out_sum.div_(4.0)
+        return out_sum
 
 class FromFirstLayer(BaseLayer):
     """Mapping W_0 -> W_j where j != 1"""
