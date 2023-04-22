@@ -99,19 +99,6 @@ class SuccessiveLayers(BaseLayer):
         set_layer: str = "sab",
         first_dim_is_output=False,
     ):
-        """
-
-        :param in_features: input feature dim
-        :param out_features:
-        :param in_shape:
-        :param out_shape:
-        :param bias:
-        :param reduction:
-        :param n_fc_layers:
-        :param num_heads:
-        :param set_layer:
-        :param first_dim_is_output: first dim (i) is the output layer for the INR (i=L-1)
-        """
         super().__init__(
             in_features,
             out_features,
@@ -123,15 +110,10 @@ class SuccessiveLayers(BaseLayer):
             num_heads=num_heads,
             set_layer=set_layer,
         )
+
         self.first_dim_is_output = first_dim_is_output
         if self.first_dim_is_output:
-            # i=L-1, j=L-2
-            in_features = self.in_features * in_shape[-1]  # in_features * dL
-            out_features = self.out_features
-        else:
-            # i != L-1
-            in_features = self.in_features
-            out_features = self.out_features
+            in_features *= in_shape[-1]
 
         self.layer = GeneralSetLayer(
             in_features=in_features,
@@ -145,20 +127,11 @@ class SuccessiveLayers(BaseLayer):
 
     def forward(self, x):
         if self.first_dim_is_output:
-            # (bs, d{L-1}, dL, in_features)
-            # (bs, d{L-1}, dL * in_features)
             x = x.flatten(start_dim=2)
-            # (bs, d{L-1}, out_features)
-            x = self.layer(x)
-
         else:
-            # (bs, di, d{i+1}, in_features)
-            # (bs, di, in_features)
             x = self._reduction(x, dim=2)
-            # (bs, di, out_features)
-            x = self.layer(x)
 
-        return x
+        return self.layer(x)
 
 
 class NonNeighborInternalLayer(BaseLayer):
