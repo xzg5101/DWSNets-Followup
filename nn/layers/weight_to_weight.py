@@ -247,11 +247,11 @@ class SetKroneckerSetLayer(BaseLayer):
         pooled_all = self._reduction(x, dim=2)
         pooled_all = pooled_all.unsqueeze(1).unsqueeze(1)
 
-        pooled_rows = self._reduction(x, dim=1, keepdim=True)
-        pooled_cols = self._reduction(x, dim=2, keepdim=True)
+        pooled_rows = self._reduction(x, dim=1, keepdim=True).view(bs, 1, self.d2, self.in_features)
+        pooled_cols = self._reduction(x, dim=2, keepdim=True).view(bs, self.d1, 1, self.in_features)
 
-        out_rows = self.lin_layers[1](pooled_rows.view(bs, 1, self.d2, self.in_features))
-        out_cols = self.lin_layers[2](pooled_cols.view(bs, self.d1, 1, self.in_features))
+        out_rows = self.lin_layers[1](pooled_rows)
+        out_cols = self.lin_layers[2](pooled_cols)
         out_both = self.lin_layers[3](pooled_all.view(bs, 1, 1, self.in_features))
 
         new_features = out_all * 0.25 + out_rows * 0.25 + out_cols * 0.25 + out_both * 0.25
