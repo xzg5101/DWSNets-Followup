@@ -68,7 +68,8 @@ class MLPModelForClassification(nn.Module):
         layers.append(nn.Linear(hidden_dim, n_classes))
         self.layers = nn.ModuleList(layers)
 
-    def forward(self, weight: Tuple[torch.Tensor], bias: Tuple[torch.Tensor]) -> torch.Tensor:
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]) -> torch.Tensor:
+        weight, bias = x
         all_weights = weight + bias
         weight = torch.cat([w.flatten(start_dim=1) for w in all_weights], dim=-1)
         
