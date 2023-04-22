@@ -9,56 +9,44 @@ class MLPModel(nn.Module):
     def __init__(self, in_dim=2208, hidden_dim=256, n_hidden=2, bn=False, init_scale=1):
         super().__init__()
         layers = [nn.Linear(in_dim, hidden_dim), nn.ReLU()]
-        for i in range(n_hidden):
-            if i < n_hidden - 1:
-                if not bn:
-                    layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
-                else:
-                    layers.extend(
-                        [
-                            nn.Linear(hidden_dim, hidden_dim),
-                            nn.BatchNorm1d(hidden_dim),
-                            nn.ReLU(),
-                        ]
-                    )
+        for _ in range(n_hidden - 1):
+            if not bn:
+                layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
             else:
-                layers.append(nn.Linear(hidden_dim, in_dim))
-
+                layers.extend(
+                    [
+                        nn.Linear(hidden_dim, hidden_dim),
+                        nn.BatchNorm1d(hidden_dim),
+                        nn.ReLU(),
+                    ]
+                )
+        layers.append(nn.Linear(hidden_dim, in_dim))
         self.seq = nn.Sequential(*layers)
+
         self._init_model_params(init_scale)
 
     def _init_model_params(self, scale):
-        for n, m in self.named_modules():
+        for m in self.modules():
             if isinstance(m, nn.Linear):
-                out_c, in_c = m.weight.shape
-                g = (2 * in_c / out_c) ** 0.5
                 nn.init.xavier_normal_(m.weight)
-                m.weight.data = m.weight.data * g * scale
+                m.weight.data *= (2 * m.in_features / m.out_features) ** 0.5 * scale
                 if m.bias is not None:
                     m.bias.data.uniform_(-1e-4, 1e-4)
 
     def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
         weight, bias = x
         bs = weight[0].shape[0]
-        weight_shape, bias_shape = [w[0, :].shape for w in weight], [b[0, :].shape for b in bias]
         all_weights = weight + bias
         weight = torch.cat([w.flatten(start_dim=1) for w in all_weights], dim=-1)
         weights_and_biases = self.seq(weight)
-
-        n_weights = sum([w.numel() for w in weight_shape])
+        n_weights = sum([w.numel() for w in weight])
         weights = weights_and_biases[:, :n_weights]
         biases = weights_and_biases[:, n_weights:]
-
-        weight, bias = [], []
-        w_index, b_index = 0, 0
-        for w_s, b_s in zip(weight_shape, bias_shape):
-            weight.append(weights[:, w_index : w_index + w_s.numel()].reshape(bs, *w_s))
-            w_index += w_s.numel()
-
-            bias.append(biases[:, b_index : b_index + b_s.numel()].reshape(bs, *b_s))
-            b_index += b_s.numel()
-
-        return tuple(weight), tuple(bias)
+        
+        weight = tuple(w.view(bs, *s) for w, s in zip(weights.split([s.numel() for s in weight]), weight))
+        bias = tuple(b.view(bs, *s) for b, s in zip(biases.split([s.numel() for s in bias]), bias))
+        
+        return weight, bias
 
 
 class MLPModelForClassification(nn.Module):
