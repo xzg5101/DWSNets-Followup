@@ -494,16 +494,15 @@ class ToLastLayer(BaseLayer):
 
     def __init__(
         self,
-        in_features,
-        out_features,
-        in_shape,
-        out_shape,
+        in_features: int,
+        out_features: int,
+        in_shape: tuple,
+        out_shape: tuple,
         bias: bool = True,
         reduction: str = "max",
         n_fc_layers: int = 1,
     ):
         """
-
         :param in_features: input feature dim
         :param out_features:
         :param in_shape:
@@ -538,7 +537,7 @@ class ToLastLayer(BaseLayer):
         # (bs, dL, out_features)
         x = x.reshape(x.shape[0], self.out_shape[-1], self.out_features)
         # (bs, d{L-1}, dL, out_features)
-        x = x.unsqueeze(1).repeat(1, self.out_shape[0], 1, 1)
+        x = x.unsqueeze(1).expand(-1, self.out_shape[0], -1, -1)
         return x
 
 
