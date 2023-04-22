@@ -440,6 +440,8 @@ class ToFirstLayer(BaseLayer):
         return x
 
 
+from torch import nn
+
 class FromLastLayer(BaseLayer):
     """Mapping W_{L-1} -> W_j where j != 0, L-2"""
 
@@ -449,10 +451,20 @@ class FromLastLayer(BaseLayer):
         out_features,
         in_shape,
         out_shape,
-        bias=True,
-        reduction="max",
-        n_fc_layers=1,
+        bias: bool = True,
+        reduction: str = "max",
+        n_fc_layers: int = 1,
     ):
+        """
+
+        :param in_features: input feature dim
+        :param out_features:
+        :param in_shape:
+        :param out_shape:
+        :param bias:
+        :param reduction:
+        :param n_fc_layers:
+        """
         super().__init__(
             in_features,
             out_features,
@@ -462,16 +474,18 @@ class FromLastLayer(BaseLayer):
             reduction=reduction,
             n_fc_layers=n_fc_layers,
         )
-        self.layer = self._get_mlp(
-            in_features=in_features * self.in_shape[-1],
-            out_features=out_features,
-            bias=bias,
+        self.layer = nn.Sequential(
+            nn.Linear(in_features * self.in_shape[-1], out_features, bias=bias),
         )
 
     def forward(self, x):
+        # (bs, d{L-1}, dL, in_features)
+        # (bs, dL, in_features)
         x = self._reduction(x, dim=1)
-        x = self.layer(x.flatten(start_dim=1))
-        x = x.unsqueeze(1).unsqueeze(1).repeat(1, *self.out_shape, 1)
+        # (bs, out_features)
+        x = self.layer(x.view(x.size(0), -1))
+        # (bs, *out_shape, out_features)
+        x = x.view(x.size(0), 1, 1, -1).expand(-1, *self.out_shape, -1)
         return x
 
 
