@@ -363,9 +363,6 @@ class WeightToBiasBlock(BaseLayer):
         # construct layers:
         for i in range(self.n_layers):
             for j in range(self.n_layers):
-                is_input_layer = i == 0
-                is_output_layer = j == self.n_layers - 1
-
                 if i == j:
                     self.layers[f"{i}_{j}"] = SameLayer(
                         in_features=in_features,
@@ -377,8 +374,12 @@ class WeightToBiasBlock(BaseLayer):
                         num_heads=num_heads,
                         set_layer=set_layer,
                         n_fc_layers=n_fc_layers,
-                        is_input_layer=is_input_layer,
-                        is_output_layer=is_output_layer,
+                        is_input_layer=(
+                            i == 0
+                        ),  # todo: make sure this condition is correct
+                        is_output_layer=(
+                            j == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
                     )
                 elif i == j + 1:
                     self.layers[f"{i}_{j}"] = SuccessiveLayers(
@@ -391,7 +392,9 @@ class WeightToBiasBlock(BaseLayer):
                         num_heads=num_heads,
                         set_layer=set_layer,
                         n_fc_layers=n_fc_layers,
-                        first_dim_is_output=is_output_layer,
+                        first_dim_is_output=(
+                            i == self.n_layers - 1
+                        ),  # todo: make sure this condition is correct
                     )
                 else:
                     self.layers[f"{i}_{j}"] = NonNeighborInternalLayer(
@@ -401,12 +404,18 @@ class WeightToBiasBlock(BaseLayer):
                         out_shape=bias_shapes[j],
                         reduction=reduction,
                         bias=bias,
-                        first_dim_is_input=is_input_layer,
-                        first_dim_is_output=is_output_layer,
-                        last_dim_is_output=is_output_layer,
+                        # todo: make sure this condition is correct
+                        first_dim_is_input=(i == 0),
+                        first_dim_is_output=(i == self.n_layers - 1),
+                        last_dim_is_output=(j == self.n_layers - 1),
                     )
 
     def forward(self, x: Tuple[torch.tensor]):
-        out_weights = [sum(self.layers[f"{i}_{j}"](x[i]) for i in range(self.n_layers)) for j in range(self.n_layers)]
+        out_weights = [
+            0.0,
+        ] * len(x)
+        for i in range(self.n_layers):
+            for j in range(self.n_layers):
+                out_weights[j] = out_weights[j] + self.layers[f"{i}_{j}"](x[i])
 
         return tuple(out_weights)
