@@ -233,17 +233,13 @@ class DWSModel(nn.Module):
 
         self.layers = nn.Sequential(*layers)
 
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
-        out = self.layers(x)
-
-        if self.add_skip:
-            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
-                self.skip(b) for b in x[1]
-            )
-            weight_out = tuple(ws + w for w, ws in zip(out[0], skip_out[0]))
-            bias_out = tuple(bs + b for b, bs in zip(out[1], skip_out[1]))
-            out = weight_out, bias_out
-
+    def forward(self, x):
+        x = self.layers(x)
+        if isinstance(x, tuple):
+            x = x[0]
+        x = self.relu(x)
+        x = self.dropout(x)
+        out = self.clf(x)
         return out
 
 class DWSModelForClassification(nn.Module):
