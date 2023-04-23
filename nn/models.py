@@ -102,7 +102,16 @@ class TupleReLU(nn.Module):
 
     def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         return tuple(torch.relu(t) for t in x[0]), tuple(torch.relu(t) for t in x[1])
-    
+
+class TupleDropout(nn.Module):
+    def __init__(self, p=0.5, inplace=False):
+        super(TupleDropout, self).__init__()
+        self.p = p
+        self.inplace = inplace
+
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
+        return tuple(F.dropout(t, self.p, self.training, self.inplace) for t in x[0]), tuple(F.dropout(t, self.p, self.training, self.inplace) for t in x[1])
+
 class DWSModel(nn.Module):
     def __init__(
         self,
@@ -185,7 +194,7 @@ class DWSModel(nn.Module):
             if input_dim_downsample is None:
                 layers.extend([
                     TupleReLU(),
-                    Dropout(dropout_rate),
+                    TupleDropout(dropout_rate),
                     DWSLayer(
                         weight_shapes=weight_shapes,
                         bias_shapes=bias_shapes,
@@ -204,7 +213,7 @@ class DWSModel(nn.Module):
             else:
                 layers.extend([
                     TupleReLU(),
-                    Dropout(dropout_rate),
+                    TupleDropout(dropout_rate),
                     DownSampleDWSLayer(
                         weight_shapes=weight_shapes,
                         bias_shapes=bias_shapes,
