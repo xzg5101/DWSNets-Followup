@@ -244,6 +244,8 @@ class DWSModel(nn.Module):
 
 from torch.nn import Dropout, ReLU
 from typing import Tuple, Optional, Union, Dict
+from torch.nn import Dropout, ReLU
+
 class DWSModelForClassification(nn.Module):
     def __init__(
         self,
@@ -251,57 +253,65 @@ class DWSModelForClassification(nn.Module):
         bias_shapes: Tuple[Tuple[int], ...],
         input_features: int,
         hidden_dim: int,
-        dws_model_params: Optional[Dict[str, Union[int, float, bool, str]]] = None,
-        invariant_layer_params: Optional[Dict[str, Union[int, float, str]]] = None,
+        n_hidden: int = 2,
+        n_classes: int = 10,
+        reduction: str = "max",
+        bias: bool = True,
+        n_fc_layers: int = 1,
+        num_heads: int = 8,
+        set_layer: str = "sab",
+        n_out_fc: int = 1,
+        dropout_rate: float = 0.0,
+        input_dim_downsample: int = None,
+        init_scale: float = 1.0,
+        init_off_diag_scale_penalty: float = 1.0,
+        bn: bool = False,
+        add_skip: bool = False,
+        add_layer_skip: bool = False,
+        equiv_out_features: int = None,
     ):
         super().__init__()
-
-        if dws_model_params is None:
-            dws_model_params = {
-                'n_hidden': 2,
-                'reduction': 'max',
-                'bias': True,
-                'n_fc_layers': 1,
-                'num_heads': 8,
-                'set_layer': 'sab',
-                'dropout_rate': 0.0,
-                'input_dim_downsample': None,
-                'init_scale': 1.0,
-                'init_off_diag_scale_penalty': 1.0,
-                'bn': False,
-                'add_skip': False,
-                'add_layer_skip': False,
-                'equiv_out_features': None,
-            }
-
-        if invariant_layer_params is None:
-            invariant_layer_params = {
-                'n_classes': 10,
-                'reduction': 'max',
-                'n_out_fc': 1,
-            }
-
         self.layers = DWSModel(
             weight_shapes=weight_shapes,
             bias_shapes=bias_shapes,
             input_features=input_features,
             hidden_dim=hidden_dim,
-            **dws_model_params,
+            n_hidden=n_hidden,
+            reduction=reduction,
+            bias=bias,
+            output_features=equiv_out_features,
+            n_fc_layers=n_fc_layers,
+            num_heads=num_heads,
+            set_layer=set_layer,
+            dropout_rate=dropout_rate,
+            input_dim_downsample=input_dim_downsample,
+            init_scale=init_scale,
+            init_off_diag_scale_penalty=init_off_diag_scale_penalty,
+            bn=bn,
+            add_skip=add_skip,
+            add_layer_skip=add_layer_skip,
         )
-        self.dropout = Dropout(dws_model_params['dropout_rate'])
-        self.relu = ReLU()
+        
+        self.processing_layers = nn.Sequential(
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+        )
+        
         self.clf = InvariantLayer(
             weight_shapes=weight_shapes,
             bias_shapes=bias_shapes,
-            in_features=hidden_dim if dws_model_params['equiv_out_features'] is None else dws_model_params['equiv_out_features'],
-            **invariant_layer_params,
+            in_features=hidden_dim if equiv_out_features is None else equiv_out_features,
+            out_features=n_classes,
+            reduction=reduction,
+            n_fc_layers=n_out_fc,
         )
 
     def forward(
         self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]], return_equiv: bool = False
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> torch.Tensor:
         x = self.layers(x)
-        out = self.clf(self.dropout(self.relu(x)))
+        out = self.clf(self.processing_layers(x))
+        
         if return_equiv:
             return out, x
         else:
