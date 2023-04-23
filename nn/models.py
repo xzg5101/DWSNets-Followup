@@ -251,20 +251,19 @@ class DWSModelForClassification(nn.Module):
         bias_shapes: Tuple[Tuple[int], ...],
         input_features: int,
         hidden_dim: int,
-        model_params: Optional[Dict[str, Union[int, float, bool, str]]] = None,
+        dws_model_params: Optional[Dict[str, Union[int, float, bool, str]]] = None,
+        invariant_layer_params: Optional[Dict[str, Union[int, float, str]]] = None,
     ):
         super().__init__()
 
-        if model_params is None:
-            model_params = {
+        if dws_model_params is None:
+            dws_model_params = {
                 'n_hidden': 2,
-                'n_classes': 10,
                 'reduction': 'max',
                 'bias': True,
                 'n_fc_layers': 1,
                 'num_heads': 8,
                 'set_layer': 'sab',
-                'n_out_fc': 1,
                 'dropout_rate': 0.0,
                 'input_dim_downsample': None,
                 'init_scale': 1.0,
@@ -275,22 +274,27 @@ class DWSModelForClassification(nn.Module):
                 'equiv_out_features': None,
             }
 
+        if invariant_layer_params is None:
+            invariant_layer_params = {
+                'n_classes': 10,
+                'reduction': 'max',
+                'n_out_fc': 1,
+            }
+
         self.layers = DWSModel(
             weight_shapes=weight_shapes,
             bias_shapes=bias_shapes,
             input_features=input_features,
             hidden_dim=hidden_dim,
-            **model_params,
+            **dws_model_params,
         )
-        self.dropout = Dropout(model_params['dropout_rate'])
+        self.dropout = Dropout(dws_model_params['dropout_rate'])
         self.relu = ReLU()
         self.clf = InvariantLayer(
             weight_shapes=weight_shapes,
             bias_shapes=bias_shapes,
-            in_features=hidden_dim if model_params['equiv_out_features'] is None else model_params['equiv_out_features'],
-            out_features=model_params['n_classes'],
-            reduction=model_params['reduction'],
-            n_fc_layers=model_params['n_out_fc'],
+            in_features=hidden_dim if dws_model_params['equiv_out_features'] is None else dws_model_params['equiv_out_features'],
+            **invariant_layer_params,
         )
 
     def forward(
