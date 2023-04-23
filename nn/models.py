@@ -243,7 +243,8 @@ class DWSModel(nn.Module):
         return out
 
 from torch.nn import Dropout, ReLU
-from typing import Tuple, Optional, Union, Dictclass DWSModelForClassification(nn.Module):
+from typing import Tuple, Optional, Union, Dict
+class DWSModelForClassification(nn.Module):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
