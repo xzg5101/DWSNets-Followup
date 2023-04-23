@@ -237,8 +237,8 @@ class DWSModel(nn.Module):
         x = self.layers(x)
         if isinstance(x, tuple):
             x = x[0]
-        x = self.relu(x)
-        x = self.dropout(x)
+        x = F.relu(x)
+        x = F.dropout(x, p=self.dropout_p, training=self.training)
         out = self.clf(x)
         return out
 
