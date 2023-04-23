@@ -94,7 +94,7 @@ class MLPModelForClassification(nn.Module):
 
 
 from torch.nn import ReLU, Dropout
-
+import torch.nn.functional as F
 
 class TupleReLU(nn.Module):
     def __init__(self):
