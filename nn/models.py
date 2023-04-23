@@ -189,7 +189,7 @@ class DWSModel(nn.Module):
                         n_fc_layers=n_fc_layers,
                         num_heads=next_num_heads,
                         set_layer=set_layer,
-                        add_skip=add_layer_skip
+                        add_skip=add_layer_skip,
                         init_scale=init_scale,
                         init_off_diag_scale_penalty=init_off_diag_scale_penalty,
                     ),
