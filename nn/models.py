@@ -65,7 +65,7 @@ class MLPModelForClassification(nn.Module):
     def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
         weight, bias = x
         all_weights = weight + bias
-        weight = torch.cat([w.view(-1) for w in all_weights], dim=-1)
+        weight = torch.cat([w.view(w.size(0), -1) for w in all_weights], dim=-1)
         return self.seq(weight)
 
 
