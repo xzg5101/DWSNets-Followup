@@ -96,6 +96,13 @@ class MLPModelForClassification(nn.Module):
 from torch.nn import ReLU, Dropout
 
 
+class TupleReLU(nn.Module):
+    def __init__(self):
+        super(TupleReLU, self).__init__()
+
+    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
+        return tuple(torch.relu(t) for t in x[0]), tuple(torch.relu(t) for t in x[1])
+    
 class DWSModel(nn.Module):
     def __init__(
         self,
@@ -177,7 +184,7 @@ class DWSModel(nn.Module):
 
             if input_dim_downsample is None:
                 layers.extend([
-                    ReLU(),
+                    TupleReLU(),
                     Dropout(dropout_rate),
                     DWSLayer(
                         weight_shapes=weight_shapes,
@@ -196,7 +203,7 @@ class DWSModel(nn.Module):
                 ])
             else:
                 layers.extend([
-                    ReLU(),
+                    TupleReLU(),
                     Dropout(dropout_rate),
                     DownSampleDWSLayer(
                         weight_shapes=weight_shapes,
