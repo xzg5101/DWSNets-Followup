@@ -37,28 +37,26 @@ def evaluate(model, projection, loader):
     total = 0.0
     all_features = []
     all_labels = []
+    
+    def concatenate_tensors(tensor1, tensor2):
+        return torch.cat([tensor1, tensor2])
+
     for batch in loader:
         batch = batch.to(device)
         inputs = (
-            tuple(
-                torch.cat([w, aug_w])
-                for w, aug_w in zip(batch.weights, batch.aug_weights)
-            ),
-            tuple(
-                torch.cat([b, aug_b])
-                for b, aug_b in zip(batch.biases, batch.aug_biases)
-            ),
+            tuple(concatenate_tensors(w, aug_w) for w, aug_w in zip(batch.weights, batch.aug_weights)),
+            tuple(concatenate_tensors(b, aug_b) for b, aug_b in zip(batch.biases, batch.aug_biases)),
         )
         features = model(inputs)
         zs = projection(features)
         logits, labels = info_nce_loss(zs, args.temperature)
-        loss += F.cross_entropy(logits, labels, reduction="sum")
+        loss += F.cross_entropy(logits, labels, reduction="sum").item()
         total += len(labels)
         real_bs = batch.weights[0].shape[0]
-        pred = logits.argmax(1)
-        correct += pred.eq(labels).sum()
-        all_features.append(features[:real_bs, :].cpu().numpy().tolist())
-        all_labels.extend(batch.label.cpu().numpy().tolist())
+        pred = logits.argmax(dim=1)
+        correct += pred.eq(labels).sum().item()
+        all_features.append(features[:real_bs, :].cpu().numpy())
+        all_labels.extend(batch.label.cpu().numpy())
 
     model.train()
     avg_loss = loss / total
@@ -70,7 +68,6 @@ def evaluate(model, projection, loader):
         features=np.concatenate(all_features),
         labels=np.array(all_labels),
     )
-
 
 def main(
     path,
@@ -106,7 +103,7 @@ def main(
         dataset=train_set,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=args.num_workers,
         pin_memory=True,
         drop_last=True,
     )
@@ -114,13 +111,12 @@ def main(
         dataset=val_set,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=4,
     )
     test_loader = torch.utils.data.DataLoader(
         dataset=test_set,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=4,
+        num_workers=args.num_workers,
         pin_memory=True,
     )
 
@@ -130,35 +126,45 @@ def main(
         f"test size {len(test_set)}"
     )
 
-    point = train_set.__getitem__(0)
+    point = train_set[0]
     weight_shapes = tuple(w.shape[:2] for w in point.weights)
     bias_shapes = tuple(b.shape[:1] for b in point.biases)
 
     logging.info(f"weight shapes: {weight_shapes}, bias shapes: {bias_shapes}")
 
+    # Create a dictionary to hold model parameters
+    model_params = {
+        'hidden_dim': args.dim_hidden,
+        'n_hidden': args.n_hidden,
+        'bn': args.add_bn,
+        'n_classes': args.embedding_dim
+    } 
+
+    # Add specific parameters for DWSModelForClassification
+    dws_params = {
+        'weight_shapes': weight_shapes,
+        'bias_shapes': bias_shapes,
+        'input_features': 1,
+        'reduction': args.reduction,
+        'n_fc_layers': args.n_fc_layers,
+        'set_layer': args.set_layer,
+        'n_out_fc': args.n_out_fc,
+        'dropout_rate': args.do_rate,
+        **model_params
+    }
+
+    # Add specific parameters for MLPModelForClassification
+    mlp_params = {
+        'in_dim': sum(w.numel() for w in weight_shapes + bias_shapes),
+        **model_params
+    }
+
+    # Create model based on args.model
     model = {
-        "dwsnet": DWSModelForClassification(
-            weight_shapes=weight_shapes,
-            bias_shapes=bias_shapes,
-            input_features=1,
-            hidden_dim=args.dim_hidden,
-            n_hidden=args.n_hidden,
-            reduction=args.reduction,
-            n_classes=args.embedding_dim,
-            n_fc_layers=args.n_fc_layers,
-            set_layer=args.set_layer,
-            n_out_fc=args.n_out_fc,
-            dropout_rate=args.do_rate,
-            bn=args.add_bn,
-        ).to(device),
-        "mlp": MLPModelForClassification(
-            in_dim=sum([w.numel() for w in weight_shapes + bias_shapes]),
-            hidden_dim=args.dim_hidden,
-            n_hidden=args.n_hidden,
-            n_classes=args.embedding_dim,
-            bn=args.add_bn,
-        ).to(device),
+        "dwsnet": DWSModelForClassification(**dws_params).to(device),
+        "mlp": MLPModelForClassification(**mlp_params).to(device),
     }[args.model]
+
 
     projection = nn.Sequential(
         nn.Linear(args.embedding_dim, args.embedding_dim),
@@ -168,70 +174,71 @@ def main(
 
     logging.info(f"number of parameters: {count_parameters(model)}")
 
-    optimizer = {
-        "adam": torch.optim.Adam(
-            [
-                dict(
-                    params=list(model.parameters()) + list(projection.parameters()),
-                    lr=lr,
-                ),
-            ],
-            lr=lr,
-            weight_decay=5e-4,
-        ),
-        "sgd": torch.optim.SGD(
-            list(model.parameters()) + list(projection.parameters()),
-            lr=lr,
-            weight_decay=5e-4,
-            momentum=0.9,
-        ),
-        "adamw": torch.optim.AdamW(
-            list(model.parameters()) + list(projection.parameters()),
-            lr=lr,
-            amsgrad=True,
-            weight_decay=5e-4,
-        ),
-    }[args.optim]
+    optimizers = {
+        "adam": torch.optim.Adam,
+        "sgd": torch.optim.SGD,
+        "adamw": torch.optim.AdamW
+    }
 
-    epoch_iter = trange(epochs)
+    optimizer_params = {
+        "params": list(model.parameters()) + list(projection.parameters()),
+        "lr": lr,
+        "weight_decay": 5e-4
+    }
 
-    criterion = nn.CrossEntropyLoss()
-    best_val_loss = 1e6
-    best_test_results, best_val_results = None, None
-    test_acc, test_loss = -1.0, -1.0
-    for epoch in epoch_iter:
+    if args.optim == "sgd":
+        optimizer_params["momentum"] = 0.9
+    elif args.optim == "adamw":
+        optimizer_params["amsgrad"] = True
+
+    optimizer = optimizers[args.optim](**optimizer_params)
+
+    def log_results_to_wandb(args, epoch, train_loss, val_loss_dict, test_loss_dict, best_val_results, best_test_results):
+        log = {
+            "train/loss": train_loss,
+            "val/loss": val_loss_dict["avg_loss"],
+            "val/acc": val_loss_dict["avg_acc"],
+            "val/best_loss": best_val_results["avg_loss"],
+            "val/best_acc": best_val_results["avg_acc"],
+            "test/loss": test_loss_dict["avg_loss"],
+            "test/acc": test_loss_dict["avg_acc"],
+            "test/best_loss": best_test_results["avg_loss"],
+            "test/best_acc": best_test_results["avg_acc"],
+            "epoch": epoch,
+        }
+        wandb.log(log)
+
+    def train_epoch(model, projection, train_loader, criterion, optimizer, device):
+        model.train()
         for i, batch in enumerate(train_loader):
-            model.train()
             optimizer.zero_grad()
 
             batch = batch.to(device)
             inputs = (
-                tuple(
-                    torch.cat([w, aug_w])
-                    for w, aug_w in zip(batch.weights, batch.aug_weights)
-                ),
-                tuple(
-                    torch.cat([b, aug_b])
-                    for b, aug_b in zip(batch.biases, batch.aug_biases)
-                ),
+                tuple(torch.cat([w, aug_w]) for w, aug_w in zip(batch.weights, batch.aug_weights)),
+                tuple(torch.cat([b, aug_b]) for b, aug_b in zip(batch.biases, batch.aug_biases)),
             )
             features = model(inputs)
             zs = projection(features)
             logits, labels = info_nce_loss(zs, args.temperature)
             loss = criterion(logits, labels)
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
             optimizer.step()
 
-            if args.wandb:
-                log = {
-                    "train/loss": loss.item(),
-                }
-                wandb.log(log)
+        return loss.item()
 
-            epoch_iter.set_description(
-                f"[{epoch} {i+1}], train loss: {loss.item():.3f}, test_loss: {test_loss:.3f}, test_acc: {test_acc:.3f}"
-            )
+
+    epoch_iter = trange(epochs)
+    criterion = nn.CrossEntropyLoss()
+    best_val_loss = 1e6
+    best_test_results, best_val_results = None, None
+    test_acc, test_loss = -1.0, -1.0
+
+    for epoch in epoch_iter:
+        train_loss = train_epoch(model, projection, train_loader, criterion, optimizer, device)
+        epoch_iter.set_description(
+            f"[{epoch}], train loss: {train_loss:.3f}, test_loss: {test_loss:.3f}, test_acc: {test_acc:.3f}"
+        )
 
         if (epoch + 1) % eval_every == 0:
             val_loss_dict = evaluate(model, projection, val_loader)
@@ -248,80 +255,10 @@ def main(
                 best_test_results = test_loss_dict
                 best_val_results = val_loss_dict
 
+            # Log the results with wandb
             if args.wandb:
-                log = {
-                    "val/loss": val_loss,
-                    "val/acc": val_acc,
-                    "val/best_loss": best_val_results["avg_loss"],
-                    "val/best_acc": best_val_results["avg_acc"],
-                    "test/loss": test_loss,
-                    "test/acc": test_acc,
-                    "test/best_loss": best_test_results["avg_loss"],
-                    "test/best_acc": best_test_results["avg_acc"],
-                    "epoch": epoch,
-                }
-                if (epoch + 1) % (eval_every * 1) == 0:
-                    train_loss_dict = evaluate(model, projection, train_loader)
-
-                    reg = LinearRegression().fit(
-                        train_loss_dict["features"], train_loss_dict["labels"]
-                    )
-                    preds_test = reg.predict(test_loss_dict["features"])
-                    preds_val = reg.predict(val_loss_dict["features"])
-
-                    reg_mse_loss = np.square(
-                        test_loss_dict["labels"] - preds_test
-                    ).mean()
-                    reg_mae_loss = np.abs(test_loss_dict["labels"] - preds_test).mean()
-
-                    val_reg_mse_loss = np.square(
-                        val_loss_dict["labels"] - preds_val
-                    ).mean()
-                    val_reg_mae_loss = np.abs(
-                        val_loss_dict["labels"] - preds_val
-                    ).mean()
-
-                    if args.embedding_dim == 2:
-                        low_dim_features = test_loss_dict["features"]
-                    else:
-                        low_dim_features = TSNE(
-                            n_components=2, random_state=42
-                        ).fit_transform(test_loss_dict["features"])
-
-                    data = [
-                        [*x, *y]
-                        for (x, y) in zip(low_dim_features, test_loss_dict["labels"])
-                    ]
-                    table = wandb.Table(
-                        data=data, columns=["f1", "f2", "label1", "label2"]
-                    )
-                    df = pd.DataFrame(data, columns=["f1", "f2", "label1", "label2"])
-                    fig, ax = plt.subplots()
-                    extra_params = dict(
-                        palette="RdBu"
-                    )  # sns.cubehelix_palette(as_cmap=True))
-                    sns.scatterplot(
-                        data=df,
-                        x="f1",
-                        y="f2",
-                        hue="label1",
-                        size="label2",
-                        ax=ax,
-                        **extra_params,
-                    )
-
-                    log.update(
-                        {
-                            "test/scatter": wandb.Image(plt),
-                            "test/reg_mse_loss": reg_mse_loss,
-                            "test/reg_mae_loss": reg_mae_loss,
-                            "val/reg_mse_loss": val_reg_mse_loss,
-                            "val/reg_mae_loss": val_reg_mae_loss,
-                            "pred_table": table,
-                        }
-                    )
-                    plt.close(fig)
-                wandb.log(log)
+                log_results_to_wandb(args, epoch, train_loss, val_loss_dict, test_loss_dict,
+                                     best_val_results, best_test_results)
 
 
 if __name__ == "__main__":
@@ -424,11 +361,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--add-bn", type=str2bool, default=True, help="add batch norm layers"
     )
-
-    parser.add_argument(
-        "--gpt", type=str2bool, default=True, help=None
-    )
-
     args = parser.parse_args()
 
     # set seed
@@ -437,11 +369,11 @@ if __name__ == "__main__":
     if args.wandb:
         name = (
             f"model_embedding_{args.model}_lr_{args.lr}_hid_dim_{args.dim_hidden}_reduction_{args.reduction}"
-            f"_bs_{args.batch_size}_seed_{args.seed}_gpt_{args.gpt}"
+            f"_bs_{args.batch_size}_seed_{args.seed}"
         )
         wandb.init(
-            project='weight-space',
-            #entity=args.wandb_entity,
+            project=args.wandb_project,
+            entity=args.wandb_entity,
             name=name,
             settings=wandb.Settings(start_method="fork"),
         )
