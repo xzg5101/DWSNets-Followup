@@ -93,182 +93,178 @@ class MLPModelForClassification(nn.Module):
         return self.seq(weight)
 
 
-from torch.nn import ReLU, Dropout
-import torch.nn.functional as F
-
-class TupleReLU(nn.Module):
-    def __init__(self):
-        super(TupleReLU, self).__init__()
-
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
-        return tuple(torch.relu(t) for t in x[0]), tuple(torch.relu(t) for t in x[1])
-
-class TupleDropout(nn.Module):
-    def __init__(self, p=0.5, inplace=False):
-        super(TupleDropout, self).__init__()
-        self.p = p
-        self.inplace = inplace
-
-    def forward(self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]):
-        return tuple(F.dropout(t, self.p, self.training, self.inplace) for t in x[0]), tuple(F.dropout(t, self.p, self.training, self.inplace) for t in x[1])
-
 class DWSModel(nn.Module):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int], ...],
-        input_features: int,
-        hidden_dim: int,
-        n_hidden: int = 2,
-        output_features: int = None,
-        reduction: str = "max",
-        bias: bool = True,
-        n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "sab",
-        input_dim_downsample: int = None,
-        dropout_rate: float = 0.0,
-        add_skip: bool = False,
-        add_layer_skip: bool = False,
-        init_scale: float = 1e-4,
-        init_off_diag_scale_penalty: float = 1.0,
-        bn: bool = False,
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        input_features,
+        hidden_dim,
+        n_hidden=2,
+        output_features=None,
+        reduction="max",
+        bias=True,
+        n_fc_layers=1,
+        num_heads=8,
+        set_layer="sab",
+        input_dim_downsample=None,
+        dropout_rate=0.0,
+        add_skip=False,
+        add_layer_skip=False,
+        init_scale=1e-4,
+        init_off_diag_scale_penalty=1.0,
+        bn=False,
     ):
         super().__init__()
         assert (
             len(weight_shapes) > 2
-        ), "The current implementation only supports input networks with M > 2 layers."
+        ), "the current implementation only support input networks with M>2 layers."
 
         self.input_features = input_features
         self.input_dim_downsample = input_dim_downsample
-        output_features = hidden_dim if output_features is None else output_features
+        if output_features is None:
+            output_features = hidden_dim
 
         self.add_skip = add_skip
         if self.add_skip:
             self.skip = nn.Linear(input_features, output_features, bias=bias)
             with torch.no_grad():
-                torch.nn.init.constant_(self.skip.weight, 1.0 / self.skip.weight.numel())
+                torch.nn.init.constant_(
+                    self.skip.weight, 1.0 / self.skip.weight.numel()
+                )
                 torch.nn.init.constant_(self.skip.bias, 0.0)
 
-        layers = []
-
         if input_dim_downsample is None:
-            layers.append(DWSLayer(
-                weight_shapes=weight_shapes,
-                bias_shapes=bias_shapes,
-                in_features=input_features,
-                out_features=hidden_dim,
-                reduction=reduction,
-                bias=bias,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-                add_skip=add_layer_skip,
-                init_scale=init_scale,
-                init_off_diag_scale_penalty=init_off_diag_scale_penalty,
-            ))
+            layers = [
+                DWSLayer(
+                    weight_shapes=weight_shapes,
+                    bias_shapes=bias_shapes,
+                    in_features=input_features,
+                    out_features=hidden_dim,
+                    reduction=reduction,
+                    bias=bias,
+                    n_fc_layers=n_fc_layers,
+                    num_heads=num_heads,
+                    set_layer=set_layer,
+                    add_skip=add_layer_skip,
+                    init_scale=init_scale,
+                    init_off_diag_scale_penalty=init_off_diag_scale_penalty,
+                ),
+            ]
+            for i in range(n_hidden):
+                if bn:
+                    layers.append(BN(hidden_dim, len(weight_shapes), len(bias_shapes)))
+
+                layers.extend(
+                    [
+                        ReLU(),
+                        Dropout(dropout_rate),
+                        DWSLayer(
+                            weight_shapes=weight_shapes,
+                            bias_shapes=bias_shapes,
+                            in_features=hidden_dim,
+                            out_features=hidden_dim
+                            if i != (n_hidden - 1)
+                            else output_features,
+                            reduction=reduction,
+                            bias=bias,
+                            n_fc_layers=n_fc_layers,
+                            num_heads=num_heads if i != (n_hidden - 1) else 1,
+                            set_layer=set_layer,
+                            add_skip=add_layer_skip,
+                            init_scale=init_scale,
+                            init_off_diag_scale_penalty=init_off_diag_scale_penalty,
+                        ),
+                    ]
+                )
         else:
-            layers.append(DownSampleDWSLayer(
-                weight_shapes=weight_shapes,
-                bias_shapes=bias_shapes,
-                in_features=input_features,
-                out_features=hidden_dim,
-                reduction=reduction,
-                bias=bias,
-                n_fc_layers=n_fc_layers,
-                num_heads=num_heads,
-                set_layer=set_layer,
-                downsample_dim=input_dim_downsample,
-                add_skip=add_layer_skip,
-                init_scale=init_scale,
-                init_off_diag_scale_penalty=init_off_diag_scale_penalty,
-            ))
+            layers = [
+                DownSampleDWSLayer(
+                    weight_shapes=weight_shapes,
+                    bias_shapes=bias_shapes,
+                    in_features=input_features,
+                    out_features=hidden_dim,
+                    reduction=reduction,
+                    bias=bias,
+                    n_fc_layers=n_fc_layers,
+                    num_heads=num_heads,
+                    set_layer=set_layer,
+                    downsample_dim=input_dim_downsample,
+                    add_skip=add_layer_skip,
+                    init_scale=init_scale,
+                    init_off_diag_scale_penalty=init_off_diag_scale_penalty,
+                ),
+            ]
+            for i in range(n_hidden):
+                if bn:
+                    layers.append(BN(hidden_dim, len(weight_shapes), len(bias_shapes)))
 
-        for i in range(n_hidden):
-            if bn:
-                layers.append(BN(hidden_dim, len(weight_shapes), len(bias_shapes)))
-
-            next_num_heads = 1 if i != (n_hidden - 1) else num_heads
-            next_out_features = output_features if i != (n_hidden - 1) else hidden_dim
-
-            if input_dim_downsample is None:
-                layers.extend([
-                    TupleReLU(),
-                    TupleDropout(dropout_rate),
-                    DWSLayer(
-                        weight_shapes=weight_shapes,
-                        bias_shapes=bias_shapes,
-                        in_features=hidden_dim,
-                        out_features=next_out_features,
-                        reduction=reduction,
-                        bias=bias,
-                        n_fc_layers=n_fc_layers,
-                        num_heads=next_num_heads,
-                        set_layer=set_layer,
-                        add_skip=add_layer_skip,
-                        init_scale=init_scale,
-                        init_off_diag_scale_penalty=init_off_diag_scale_penalty,
-                    ),
-                ])
-            else:
-                layers.extend([
-                    TupleReLU(),
-                    TupleDropout(dropout_rate),
-                    DownSampleDWSLayer(
-                        weight_shapes=weight_shapes,
-                        bias_shapes=bias_shapes,
-                        in_features=hidden_dim,
-                        out_features=next_out_features,
-                        reduction=reduction,
-                        bias=bias,
-                        n_fc_layers=n_fc_layers,
-                        num_heads=next_num_heads,
-                        set_layer=set_layer,
-                        downsample_dim=input_dim_downsample,
-                        add_skip=add_layer_skip,
-                        init_scale=init_scale,
-                        init_off_diag_scale_penalty=init_off_diag_scale_penalty,
-                    ),
-                ])
-
+                layers.extend(
+                    [
+                        ReLU(),
+                        Dropout(dropout_rate),
+                        DownSampleDWSLayer(
+                            weight_shapes=weight_shapes,
+                            bias_shapes=bias_shapes,
+                            in_features=hidden_dim,
+                            out_features=hidden_dim
+                            if i != (n_hidden - 1)
+                            else output_features,
+                            reduction=reduction,
+                            bias=bias,
+                            n_fc_layers=n_fc_layers,
+                            num_heads=num_heads if i != (n_hidden - 1) else 1,
+                            set_layer=set_layer,
+                            downsample_dim=input_dim_downsample,
+                            add_skip=add_layer_skip,
+                            init_scale=init_scale,
+                            init_off_diag_scale_penalty=init_off_diag_scale_penalty,
+                        ),
+                    ]
+                )
         self.layers = nn.Sequential(*layers)
 
-    def forward(self, x):
-        x = self.layers(x)
-        if isinstance(x, tuple):
-            x = x[0]
-        x = F.relu(x)
-        x = F.dropout(x, p=self.dropout_p, training=self.training)
-        out = self.clf(x)
+    def forward(self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]]):
+        out = self.layers(x)
+        if self.add_skip:
+            skip_out = tuple(self.skip(w) for w in x[0]), tuple(
+                self.skip(b) for b in x[1]
+            )
+            weight_out = tuple(ws + w for w, ws in zip(out[0], skip_out[0]))
+            bias_out = tuple(bs + b for b, bs in zip(out[1], skip_out[1]))
+            out = weight_out, bias_out
         return out
 
-from torch.nn import Dropout, ReLU
-from typing import Tuple, Optional, Union, Dict
-from torch.nn import Dropout, ReLU
 
 class DWSModelForClassification(nn.Module):
     def __init__(
         self,
         weight_shapes: Tuple[Tuple[int, int], ...],
-        bias_shapes: Tuple[Tuple[int], ...],
-        input_features: int,
-        hidden_dim: int,
-        n_hidden: int = 2,
-        n_classes: int = 10,
-        reduction: str = "max",
-        bias: bool = True,
-        n_fc_layers: int = 1,
-        num_heads: int = 8,
-        set_layer: str = "sab",
-        n_out_fc: int = 1,
-        dropout_rate: float = 0.0,
-        input_dim_downsample: int = None,
-        init_scale: float = 1.0,
-        init_off_diag_scale_penalty: float = 1.0,
-        bn: bool = False,
-        add_skip: bool = False,
-        add_layer_skip: bool = False,
-        equiv_out_features: int = None,
+        bias_shapes: Tuple[
+            Tuple[int,],
+            ...,
+        ],
+        input_features,
+        hidden_dim,
+        n_hidden=2,
+        n_classes=10,
+        reduction="max",
+        bias=True,
+        n_fc_layers=1,
+        num_heads=8,
+        set_layer="sab",
+        n_out_fc=1,
+        dropout_rate=0.0,
+        input_dim_downsample=None,
+        init_scale=1.0,
+        init_off_diag_scale_penalty=1.0,
+        bn=False,
+        add_skip=False,
+        add_layer_skip=False,
+        equiv_out_features=None,
     ):
         super().__init__()
         self.layers = DWSModel(
@@ -291,27 +287,24 @@ class DWSModelForClassification(nn.Module):
             add_skip=add_skip,
             add_layer_skip=add_layer_skip,
         )
-        
-        self.processing_layers = nn.Sequential(
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-        )
-        
+        self.dropout = Dropout(dropout_rate)
+        self.relu = ReLU()
         self.clf = InvariantLayer(
             weight_shapes=weight_shapes,
             bias_shapes=bias_shapes,
-            in_features=hidden_dim if equiv_out_features is None else equiv_out_features,
+            in_features=hidden_dim
+            if equiv_out_features is None
+            else equiv_out_features,
             out_features=n_classes,
             reduction=reduction,
             n_fc_layers=n_out_fc,
         )
 
     def forward(
-        self, x: Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]], return_equiv: bool = False
-    ) -> torch.Tensor:
+        self, x: Tuple[Tuple[torch.tensor], Tuple[torch.tensor]], return_equiv=False
+    ):
         x = self.layers(x)
-        out = self.clf(self.processing_layers(x))
-        
+        out = self.clf(self.dropout(self.relu(x)))
         if return_equiv:
             return out, x
         else:
